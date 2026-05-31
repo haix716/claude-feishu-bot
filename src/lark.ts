@@ -80,6 +80,76 @@ class LarkService {
       },
     });
   }
+
+  /** 获取用户信息（昵称、头像） */
+  async getUserInfo(userId: string): Promise<{ name: string; avatar: string } | null> {
+    try {
+      const resp = await this.client.contact.user.get({
+        path: { user_id: userId },
+        params: { user_id_type: 'open_id' },
+      });
+      if (resp.code === 0 && resp.data?.user) {
+        return {
+          name: resp.data.user.name || '未知用户',
+          avatar: resp.data.user.avatar?.avatar_72 || '',
+        };
+      }
+    } catch (err) {
+      console.error('getUserInfo failed:', err);
+    }
+    return null;
+  }
+
+  /** 获取群信息（群名） */
+  async getChatInfo(chatId: string): Promise<{ name: string } | null> {
+    try {
+      const resp = await this.client.im.chat.get({
+        path: { chat_id: chatId },
+      });
+      if (resp.code === 0 && resp.data) {
+        return { name: resp.data.name || '未命名群' };
+      }
+    } catch (err) {
+      console.error('getChatInfo failed:', err);
+    }
+    return null;
+  }
+
+  /** 获取消息中的文件资源 */
+  async getFileResource(messageId: string, fileKey: string): Promise<Buffer | null> {
+    try {
+      const resp = await this.client.im.messageResource.get({
+        path: { message_id: messageId, file_key: fileKey },
+        params: { type: 'file' },
+      });
+      // SDK 返回的是文件流，需要转为 Buffer
+      if (resp && typeof resp === 'object' && 'pipe' in resp) {
+        const chunks: Buffer[] = [];
+        for await (const chunk of resp as any) {
+          chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+        }
+        return Buffer.concat(chunks);
+      }
+    } catch (err) {
+      console.error('getFileResource failed:', err);
+    }
+    return null;
+  }
+
+  /** 获取消息详情（用于获取文件信息） */
+  async getMessage(messageId: string): Promise<any | null> {
+    try {
+      const resp = await this.client.im.message.get({
+        path: { message_id: messageId },
+      });
+      if (resp.code === 0) {
+        return resp.data;
+      }
+    } catch (err) {
+      console.error('getMessage failed:', err);
+    }
+    return null;
+  }
 }
 
 export const larkService = new LarkService();

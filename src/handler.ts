@@ -16,23 +16,48 @@ const throttledUpdate = pThrottle(
 );
 
 /**
+ * 清理群聊中的 @mention 占位符
+ * 群聊消息 content 中 bot 被 @ 的部分会变成 @_user_1 等占位符
+ */
+function stripAtMention(text: string): string {
+  return text.replace(/@_user_\d+\s*/g, '').trim();
+}
+
+/**
  * 处理用户消息
  */
 export async function handleMessage(
   userId: string,
   chatId: string,
-  query: string
+  query: string,
+  chatType: string = 'p2p',
+  messageId: string = ''
 ): Promise<void> {
+  // 群聊：清理 @mention
+  if (chatType === 'group') {
+    query = stripAtMention(query);
+  }
+
+  if (!query) return;
+
   // /clear 命令
   if (query.trim() === '/clear') {
     conversations.delete(userId);
-    await larkService.sendText(chatId, '对话已清除 ✅');
+    if (chatType === 'group' && messageId) {
+      await larkService.replyText(messageId, '对话已清除 ✅');
+    } else {
+      await larkService.sendText(chatId, '对话已清除 ✅');
+    }
     return;
   }
 
   // 并发检查
   if (running.get(userId)) {
-    await larkService.sendText(chatId, '上一条回复还在生成中，请稍候...');
+    if (chatType === 'group' && messageId) {
+      await larkService.replyText(messageId, '上一条回复还在生成中，请稍候...');
+    } else {
+      await larkService.sendText(chatId, '上一条回复还在生成中，请稍候...');
+    }
     return;
   }
 
@@ -53,20 +78,29 @@ export async function handleMessage(
   running.set(userId, true);
 
   try {
-    // 发送占位卡片
-    const messageId = await larkService.sendCard(chatId, '思考中...');
+    // 群聊用 reply（引用原消息），私聊用 create（发新消息）
+    let replyMessageId: string;
+    if (chatType === 'group' && messageId) {
+      replyMessageId = await larkService.replyCard(messageId, '思考中...');
+    } else {
+      replyMessageId = await larkService.sendCard(chatId, '思考中...');
+    }
 
     // 调 Claude，流式更新卡片
     const fullText = await streamClaude(
       history,
-      (text) => throttledUpdate(messageId, text)
+      (text) => throttledUpdate(replyMessageId, text)
     );
 
     // 保存 assistant 回复
     history.push({ role: 'assistant', content: fullText });
   } catch (err) {
     console.error('Claude API error:', err);
-    await larkService.sendText(chatId, `出错了: ${err instanceof Error ? err.message : String(err)}`);
+    if (chatType === 'group' && messageId) {
+      await larkService.replyText(messageId, `出错了: ${err instanceof Error ? err.message : String(err)}`);
+    } else {
+      await larkService.sendText(chatId, `出错了: ${err instanceof Error ? err.message : String(err)}`);
+    }
   } finally {
     running.set(userId, false);
   }

@@ -12,11 +12,17 @@ const eventDispatcher = new Lark.EventDispatcher({}).register({
     (async () => {
       const userId = event.sender?.sender_id?.open_id || '';
       const chatId = event.message.chat_id || '';
+      const chatType = event.message?.chat_type || 'p2p';  // "p2p" | "group"
+      const messageId = event.message?.message_id || '';
       const messageType = event.message?.message_type || '';
 
       // 只处理文本消息
       if (messageType !== 'text') {
-        await larkService.sendText(chatId, '请发送文本消息');
+        if (chatType === 'group' && messageId) {
+          await larkService.replyText(messageId, '请发送文本消息');
+        } else {
+          await larkService.sendText(chatId, '请发送文本消息');
+        }
         return;
       }
 
@@ -29,8 +35,8 @@ const eventDispatcher = new Lark.EventDispatcher({}).register({
 
       if (!query) return;
 
-      console.log(`[${userId}] ${query}`);
-      await handleMessage(userId, chatId, query);
+      console.log(`[${chatType}] [${userId}] ${query}`);
+      await handleMessage(userId, chatId, query, chatType, messageId);
     })();
   },
 });

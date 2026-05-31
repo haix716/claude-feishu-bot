@@ -54,6 +54,32 @@ class LarkService {
       },
     });
   }
+
+  /** 回复卡片消息（群聊用，引用原消息），返回 messageId */
+  async replyCard(messageId: string, content: string): Promise<string> {
+    const resp = await this.client.im.message.reply({
+      path: { message_id: messageId },
+      data: {
+        msg_type: 'interactive',
+        content: JSON.stringify(generateCard(content)),
+      },
+    });
+    if (resp.code !== 0) {
+      throw new Error(`replyCard failed: ${resp.msg}`);
+    }
+    return resp.data?.message_id || '';
+  }
+
+  /** 回复纯文本消息（群聊用，引用原消息） */
+  async replyText(messageId: string, text: string): Promise<void> {
+    await this.client.im.message.reply({
+      path: { message_id: messageId },
+      data: {
+        msg_type: 'text',
+        content: JSON.stringify({ text }),
+      },
+    });
+  }
 }
 
 export const larkService = new LarkService();

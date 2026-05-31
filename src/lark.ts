@@ -1,4 +1,4 @@
-import { Client, WSClient } from '@larksuiteoapi/node-sdk';
+import { Client, WSClient, withUserAccessToken } from '@larksuiteoapi/node-sdk';
 import { config } from './config';
 import { generateCard } from './util';
 
@@ -14,6 +14,55 @@ class LarkService {
     };
     this.client = new Client(opts);
     this.wsClient = new WSClient(opts);
+  }
+
+  /** OAuth 回调 URL */
+  get callbackUrl() {
+    return `http://localhost:${config.port}${config.lark.callbackPath}`;
+  }
+
+  /** OAuth 授权链接 */
+  get authorizeUrl() {
+    const endpoint = new URL(`${config.lark.domain}/open-apis/authen/v1/authorize`);
+    endpoint.searchParams.append('client_id', config.lark.appId);
+    endpoint.searchParams.append('redirect_uri', this.callbackUrl);
+    endpoint.searchParams.append('scope', 'im:chat.members:read contact:user.base:readonly');
+    return endpoint.toString();
+  }
+
+  /** 用授权码换取 user_access_token */
+  async getUserAccessToken(code: string): Promise<{ access_token: string; expires_in: number; refresh_token: string } | null> {
+    try {
+      const resp = await fetch(`${config.lark.domain}/open-apis/authen/v2/oauth/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          grant_type: 'authorization_code',
+          client_id: config.lark.appId,
+          client_secret: config.lark.appSecret,
+          code,
+          redirect_uri: this.callbackUrl,
+        }),
+      });
+      const data = await resp.json() as any;
+      if (data.access_token) return data;
+    } catch (err) {
+      console.error('getUserAccessToken failed:', err);
+    }
+    return null;
+  }
+
+  /** 用 user_access_token 获取用户信息 */
+  async getUserInfoWithToken(userAccessToken: string): Promise<{ openId: string; name: string } | null> {
+    try {
+      const resp = await this.client.authen.userInfo.get({}, withUserAccessToken(userAccessToken));
+      if (resp.code === 0 && resp.data) {
+        return { openId: resp.data.open_id || '', name: resp.data.name || '' };
+      }
+    } catch (err) {
+      console.error('getUserInfoWithToken failed:', err);
+    }
+    return null;
   }
 
   /** 发送卡片消息，返回 messageId */
@@ -116,12 +165,16 @@ class LarkService {
   }
 
   /** 从群成员列表获取用户在群里的名字（nickname） */
-  async getChatMemberName(chatId: string, userId: string): Promise<string | null> {
+  async getChatMemberName(chatId: string, userId: string, userAccessToken?: string): Promise<string | null> {
     try {
-      const resp = await this.client.im.chatMembers.get({
+      const reqOpts = {
         path: { chat_id: chatId },
-        params: { member_id_type: 'open_id' },
-      });
+        params: { member_id_type: 'open_id' as const },
+      };
+      // 用 user_access_token 调用可获取用户视角下的显示名
+      const resp = userAccessToken
+        ? await this.client.im.chatMembers.get(reqOpts, withUserAccessToken(userAccessToken))
+        : await this.client.im.chatMembers.get(reqOpts);
       if (resp.code === 0 && resp.data?.items) {
         const member = resp.data.items.find((m: any) => m.member_id === userId);
         if (member?.name) return member.name;

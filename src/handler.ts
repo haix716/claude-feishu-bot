@@ -9,6 +9,15 @@ const conversations = new Map<string, ChatMessage[]>();
 /** 每用户并发锁 */
 const running = new Map<string, boolean>();
 
+/** 每用户 OAuth token（用于获取真实用户名） */
+const userTokens = new Map<string, string>();
+
+/** OAuth 回调时存储 token */
+export function storeUserToken(userId: string, accessToken: string) {
+  userTokens.set(userId, accessToken);
+  console.log(`[${userId}] OAuth 登录成功`);
+}
+
 /** 节流更新卡片（200ms 间隔） */
 const throttledUpdate = pThrottle(
   (messageId: string, content: string) => larkService.updateCard(messageId, content),
@@ -32,19 +41,25 @@ async function fetchContext(
 ): Promise<ChatContext> {
   const ctx: ChatContext = { chatType };
 
-  // 并行获取用户信息和群信息
-  const [userInfo, chatInfo] = await Promise.all([
-    larkService.getUserInfo(userId),
-    chatType === 'group' ? larkService.getChatInfo(chatId) : Promise.resolve(null),
-  ]);
+  // 获取群信息
+  if (chatType === 'group') {
+    const chatInfo = await larkService.getChatInfo(chatId);
+    if (chatInfo) ctx.chatName = chatInfo.name;
+  }
 
-  if (userInfo) ctx.userName = userInfo.name;
-  if (chatInfo) ctx.chatName = chatInfo.name;
+  // 获取用户名：优先用 user_access_token（可拿到显示名）
+  const userToken = userTokens.get(userId);
+  if (userToken && chatType === 'group') {
+    const memberName = await larkService.getChatMemberName(chatId, userId, userToken);
+    if (memberName && !memberName.startsWith('飞书用户')) {
+      ctx.userName = memberName;
+    }
+  }
 
-  // 群聊中如果用户名是系统默认名，尝试从群成员列表获取更准确的名字
-  if (chatType === 'group' && (!ctx.userName || ctx.userName.startsWith('飞书用户'))) {
-    const memberName = await larkService.getChatMemberName(chatId, userId);
-    if (memberName) ctx.userName = memberName;
+  // 兜底：用 tenant_access_token 获取
+  if (!ctx.userName) {
+    const userInfo = await larkService.getUserInfo(userId);
+    if (userInfo) ctx.userName = userInfo.name;
   }
 
   return ctx;
@@ -110,6 +125,17 @@ export async function handleMessage(
     return;
   }
 
+  // /login 命令
+  if (query.trim() === '/login') {
+    const loginMsg = `点击登录获取你的显示名：\n${larkService.authorizeUrl}`;
+    if (chatType === 'group' && messageId) {
+      await larkService.replyText(messageId, loginMsg);
+    } else {
+      await larkService.sendText(chatId, loginMsg);
+    }
+    return;
+  }
+
   // 并发检查
   if (running.get(userId)) {
     if (chatType === 'group' && messageId) {
@@ -124,6 +150,17 @@ export async function handleMessage(
   console.log(`[${userId}] 获取上下文...`);
   const ctx = await fetchContext(userId, chatId, chatType);
   console.log(`[${userId}] 上下文:`, ctx);
+
+  // 群聊中如果拿不到真实用户名，自动引导登录
+  if (chatType === 'group' && (!ctx.userName || ctx.userName.startsWith('飞书用户'))) {
+    const loginMsg = `需要授权才能识别你的身份，点击登录：\n${larkService.authorizeUrl}`;
+    if (messageId) {
+      await larkService.replyText(messageId, loginMsg);
+    } else {
+      await larkService.sendText(chatId, loginMsg);
+    }
+    return;
+  }
 
   // 获取或创建对话历史
   if (!conversations.has(userId)) {

@@ -12,6 +12,7 @@ Claude 助手飞书机器人。用户在飞书中发消息，机器人调用 Cla
 - `@larksuiteoapi/node-sdk` — 飞书 SDK（WebSocket 长连接）
 - `@anthropic-ai/sdk` — Claude API（streaming）
 - `dotenv` + `express`
+- ESLint（`npx eslint src/`，0 error 才能 commit）
 
 ## 运行命令
 
@@ -21,7 +22,10 @@ cp .env.example .env   # 填入凭据
 npm run dev             # 开发模式（ts-node）
 npm run build           # 编译
 npm start               # 生产模式
+npm run lint            # 检查代码规范
 ```
+
+代理环境下需加 `NO_PROXY=open.feishu.cn`。
 
 ## 架构
 
@@ -42,6 +46,31 @@ src/
 - `APP_ID` / `APP_SECRET` — 飞书应用凭据
 - `LARK_DOMAIN` — 飞书 API 域名
 - `ANTHROPIC_API_KEY` — Claude API key
-- `CLAUDE_MODEL` — Claude 模型名
+- `ANTHROPIC_BASE_URL` — API 地址（支持第三方兼容服务）
+- `CLAUDE_MODEL` — 模型名
 - `MAX_TURNS` — 对话历史最大轮数
 - `PORT` — HTTP 端口
+- `NO_PROXY` — 绕过代理的域名
+
+## 工作流规范
+
+遵循全局 CLAUDE.md 的「讨论→确认→执行」流程：
+
+1. 改代码 → 编译 + lint（0 error）→ 重启 bot
+2. 等用户在飞书里测试确认功能正常
+3. **用户明确确认后**再 commit → 敏感信息扫描 → push
+
+### 任务大小判断
+- **直接做**：单文件修改、小 bug 修复、明确的单步操作
+- **先讨论**：多文件改动、新功能、有多种实现方案
+
+### Commit 规范
+- 格式：`<type>(<scope>): <description>`
+- description 用英文，小写开头，不超过 72 字符
+- 提交前必须 lint：`npx eslint src/`（0 error）
+- push 前必须敏感信息扫描：`git diff --cached | grep -iE "token|key|secret|password|ghp_|sk-"`
+
+### 安全规则
+- 密钥、token、密码不进代码、不进 commit、不进日志
+- API key 只存 `.env`（被 .gitignore 排除）
+- 涉及 API key 的操作必须让晓燕文字确认

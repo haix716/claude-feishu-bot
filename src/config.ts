@@ -10,6 +10,7 @@ export const config = {
   },
   claude: {
     apiKey: process.env.ANTHROPIC_API_KEY || '',
+    baseURL: process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com',
     model: process.env.CLAUDE_MODEL || 'claude-sonnet-4-20250514',
   },
   maxTurns: parseInt(process.env.MAX_TURNS || '20'),

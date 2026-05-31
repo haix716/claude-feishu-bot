@@ -1,7 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { config } from './config';
 
-const client = new Anthropic({ apiKey: config.claude.apiKey });
+const client = new Anthropic({
+  apiKey: config.claude.apiKey,
+  baseURL: config.claude.baseURL,
+});
 
 export interface ChatMessage {
   role: 'user' | 'assistant';

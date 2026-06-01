@@ -174,6 +174,13 @@ export async function handleMessage(
     );
     console.log(`[${userId}] Claude 回复完成，长度: ${fullText.length}`);
 
+    // 最终更新：确保完整内容写入卡片（绕过节流）
+    try {
+      await larkService.updateCard(replyMessageId, fullText);
+    } catch (err: any) {
+      if (err?.data?.code !== 230020) throw err;
+    }
+
     // 保存 assistant 回复
     history.push({ role: 'assistant', content: fullText });
   } catch (err) {

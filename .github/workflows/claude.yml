@@ -37,24 +37,39 @@ jobs:
           ANTHROPIC_DEFAULT_OPUS_MODEL: mimo-v2.5-pro
           ANTHROPIC_DEFAULT_SONNET_MODEL: mimo-v2.5-pro
           ANTHROPIC_DEFAULT_HAIKU_MODEL: mimo-v2.5-pro
+          APPEND_SYSTEM_PROMPT: |
+            This is a Claude-powered Feishu bot project (Node.js + TypeScript).
+            Follow the project's CLAUDE.md for conventions.
+
+            When fixing bugs from Issues, follow strict TDD:
+            1. Read the issue carefully. If unclear, comment to ask for clarification — do NOT start coding.
+            2. Write a failing test in tests/ that reproduces the bug.
+            3. Run `npm test` — confirm the new test FAILS.
+               If it passes: stop, comment that the issue may not be reproducible, do NOT modify code.
+            4. Fix the source code with minimal changes.
+            5. Run `npm test` — confirm new test PASSES and all old tests still pass.
+            6. Run `npm run lint` — confirm zero errors.
+            7. Create a PR with: issue link, root cause, fix description, test results.
+
+            When reviewing PRs:
+            Run `npm test` and `npm run lint` to verify changes work correctly.
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           github_token: ${{ github.token }}
           trigger_phrase: "@claude"
-          claude_args: "--permission-mode acceptEdits"
-          prompt: |
-            This is a Claude-powered Feishu bot project (Node.js + TypeScript).
-            Follow the project's CLAUDE.md for conventions.
-
-            For PRs: review for bugs, security issues, and style problems.
-            Run `npm test` and `npm run lint` to verify changes.
-
-            For Issues (bug fixes), follow strict TDD:
-            1. Read the issue carefully. If unclear, comment to ask for clarification — do NOT start coding.
-            2. Write a failing test in tests/ that reproduces the bug described in the issue.
-            3. Run `npm test` — confirm the new test FAILS.
-               If it passes unexpectedly: stop, comment that the issue may not be reproducible, do NOT modify code.
-            4. Fix the source code with minimal changes.
-            5. Run `npm test` — confirm the new test PASSES and all old tests still pass.
-            6. Run `npm run lint` — confirm zero errors.
-            7. Create a PR with: issue link, root cause, fix description, test results.
+          settings: |
+            {
+              "permissions": {
+                "allow": [
+                  "Bash(npm test)",
+                  "Bash(npm run lint)",
+                  "Bash(npm run build)",
+                  "Bash(git *)",
+                  "Read",
+                  "Write",
+                  "Edit",
+                  "Glob",
+                  "Grep"
+                ]
+              }
+            }

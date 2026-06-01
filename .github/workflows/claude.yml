@@ -1,0 +1,102 @@
+name: Claude Code
+
+on:
+  issues:
+    types: [opened]
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  pull_request:
+    types: [opened, synchronize]
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: "Prompt for Claude"
+        required: false
+        default: "Read the CLAUDE.md, then list all source files and run npm test."
+
+jobs:
+  claude:
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issues' && contains(github.event.issue.body, '@claude')) ||
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Run Claude Code
+        uses: anthropics/claude-code-action@v1
+        env:
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_MODEL: mimo-v2.5-pro
+          ANTHROPIC_DEFAULT_OPUS_MODEL: mimo-v2.5-pro
+          ANTHROPIC_DEFAULT_SONNET_MODEL: mimo-v2.5-pro
+          ANTHROPIC_DEFAULT_HAIKU_MODEL: mimo-v2.5-pro
+          APPEND_SYSTEM_PROMPT: |
+            This is a Claude-powered Feishu bot project (Node.js + TypeScript).
+            Follow the project's CLAUDE.md for conventions.
+
+            ## Bug Fix Process (STRICT TDD — you MUST follow every step)
+
+            When fixing a bug from an Issue:
+
+            STEP 0: Run `npm ci` to install dependencies first.
+
+            STEP 1: Read the issue carefully. Understand the expected vs actual behavior.
+            If unclear, comment on the issue asking for clarification. DO NOT skip this.
+
+            STEP 2: Write a failing test in tests/ directory that reproduces the bug.
+            The test should verify the "expected behavior" from the issue.
+            This test MUST fail when you run it (because the bug exists).
+
+            STEP 3: Run `npm test` to confirm your new test FAILS.
+            - If your test PASSES: the bug may not be reproducible. Stop. Comment on the issue. DO NOT modify code.
+            - If your test FAILS: proceed to STEP 4.
+
+            STEP 4: Fix the source code with minimal changes.
+
+            STEP 5: Run `npm test` — your new test MUST pass, and ALL old tests must still pass.
+
+            STEP 6: Run `npm run lint` — must have zero errors.
+
+            STEP 7: Create a PR with: issue link, root cause, fix description, test results.
+
+            ## PR Review Process
+
+            When reviewing a PR: run `npm test` and `npm run lint` to verify.
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ github.token }}
+          trigger_phrase: "@claude"
+          settings: |
+            {
+              "permissions": {
+                "allow": [
+                  "Bash(npm ci)",
+                  "Bash(npm install)",
+                  "Bash(npm test)",
+                  "Bash(npx prettier *)",
+                  "Bash(npx eslint *)",
+                  "Bash(npm run lint)",
+                  "Bash(npm run build)",
+                  "Bash(git *)",
+                  "Read",
+                  "Write",
+                  "Edit",
+                  "Glob",
+                  "Grep"
+                ]
+              }
+            }

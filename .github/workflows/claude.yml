@@ -1,0 +1,46 @@
+name: Claude Code
+
+on:
+  # Issue 评论中 @claude 触发
+  issue_comment:
+    types: [created]
+  # PR review 评论中 @claude 触发
+  pull_request_review_comment:
+    types: [created]
+  # 新 PR 创建时自动审查（可选）
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  claude:
+    # 只在 @claude 触发 或 新 PR 时运行
+    if: |
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Claude Code
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Issue/PR 评论中的触发词
+          trigger_phrase: "@claude"
+          # PR 自动审查的触发方式
+          direct_prompt: |
+            Review this PR. Check for bugs, security issues, and style problems.
+            Run `npm test` and `npm run lint` to verify changes work correctly.
+          # 允许 Claude 执行的自定义指令
+          custom_instructions: |
+            This is a Claude-powered Feishu bot project (Node.js + TypeScript).
+            Follow the project's CLAUDE.md for conventions.
+            Always run `npm test` after making changes.

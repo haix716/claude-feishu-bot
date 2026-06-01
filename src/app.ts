@@ -1,8 +1,6 @@
-import express from 'express';
 import * as Lark from '@larksuiteoapi/node-sdk';
-import { config } from './config';
 import { larkService } from './lark';
-import { handleMessage, handleFileEvent, storeUserToken } from './handler';
+import { handleMessage, handleFileEvent } from './handler';
 
 console.log('🚀 Claude 飞书助手启动中...');
 
@@ -53,42 +51,6 @@ const eventDispatcher = new Lark.EventDispatcher({}).register({
       }
     })();
   },
-});
-
-// Express
-const app = express();
-
-// OAuth 回调路由
-app.get(config.lark.callbackPath, async (req, res) => {
-  try {
-    const code = req.query.code as string;
-    if (!code) {
-      res.status(400).end('缺少授权码');
-      return;
-    }
-
-    const tokenResp = await larkService.getUserAccessToken(code);
-    if (!tokenResp) {
-      res.status(500).end('获取 token 失败');
-      return;
-    }
-
-    const userInfo = await larkService.getUserInfoWithToken(tokenResp.access_token);
-    if (!userInfo?.openId) {
-      res.status(500).end('获取用户信息失败');
-      return;
-    }
-
-    storeUserToken(userInfo.openId, tokenResp.access_token);
-    res.send(`<h2>✅ 登录成功</h2><p>你好 ${userInfo.name}，可以关闭此页面回到飞书继续对话。</p>`);
-  } catch (err) {
-    console.error('[OAuth callback error]', err);
-    res.status(500).end('授权回调处理失败');
-  }
-});
-
-app.listen(config.port, () => {
-  console.log(`📡 HTTP 服务已启动: http://localhost:${config.port}`);
 });
 
 // WebSocket 长连接

@@ -43,4 +43,32 @@ jobs:
           custom_instructions: |
             This is a Claude-powered Feishu bot project (Node.js + TypeScript).
             Follow the project's CLAUDE.md for conventions.
-            Always run `npm test` after making changes.
+
+            ## Bug 修复流程（严格 TDD）
+
+            When fixing a bug from an Issue, follow these steps IN ORDER:
+
+            ### Step 1: 理解 Issue
+            - 仔细阅读 Issue 描述，提取：问题现象、复现步骤、期望行为、实际行为
+            - 如果 Issue 描述不清楚，在 PR 中说明你的理解，请求确认，**不要开始改代码**
+
+            ### Step 2: 写失败的测试
+            - 在 tests/ 目录下编写自动化测试用例，复现 Issue 描述的问题
+            - 测试应该验证「期望行为」，当前应该失败（因为 bug 存在）
+
+            ### Step 3: 确认测试失败
+            - 运行 `npm test`，确认新写的测试确实失败
+            - **如果测试意外通过**：说明 Issue 描述的问题可能不存在或无法复现
+              → 停止修复，在 PR 中说明情况，请求 Issue 作者提供更多上下文
+              → **不要继续修改代码**
+
+            ### Step 4: 修复代码
+            - 只有测试确认失败后，才开始修改源代码
+            - 最小改动原则：只改必要的部分
+
+            ### Step 5: 确认测试通过
+            - 运行 `npm test`，确认：新测试通过 + 所有旧测试不回归
+            - 运行 `npm run lint`，确认无 lint 错误
+
+            ### Step 6: 提交 PR
+            - PR 描述中包含：Issue 链接、问题原因、修复方案、测试验证结果

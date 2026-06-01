@@ -1,0 +1,82 @@
+name: Claude Code
+
+on:
+  issues:
+    types: [opened]
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  pull_request:
+    types: [opened, synchronize]
+  workflow_dispatch:
+    inputs:
+      prompt:
+        description: "Prompt for Claude"
+        required: false
+        default: "Read the CLAUDE.md, then list all source files and run npm test."
+
+jobs:
+  claude:
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'issues' && contains(github.event.issue.body, '@claude')) ||
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Run Claude Code
+        uses: anthropics/claude-code-action@v1
+        env:
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_MODEL: mimo-v2.5-pro
+          ANTHROPIC_DEFAULT_OPUS_MODEL: mimo-v2.5-pro
+          ANTHROPIC_DEFAULT_SONNET_MODEL: mimo-v2.5-pro
+          ANTHROPIC_DEFAULT_HAIKU_MODEL: mimo-v2.5-pro
+          APPEND_SYSTEM_PROMPT: |
+            This is a Claude-powered Feishu bot project (Node.js + TypeScript).
+            Follow the project's CLAUDE.md for conventions.
+
+            When fixing bugs from Issues, follow strict TDD:
+            1. Read the issue carefully. If unclear, comment to ask for clarification — do NOT start coding.
+            2. Write a failing test in tests/ that reproduces the bug.
+            3. Run `npm test` — confirm the new test FAILS.
+               If it passes: stop, comment that the issue may not be reproducible, do NOT modify code.
+            4. Fix the source code with minimal changes.
+            5. Run `npm test` — confirm new test PASSES and all old tests still pass.
+            6. Run `npm run lint` — confirm zero errors.
+            7. Create a PR with: issue link, root cause, fix description, test results.
+
+            When reviewing PRs:
+            Run `npm test` and `npm run lint` to verify changes work correctly.
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ github.token }}
+          trigger_phrase: "@claude"
+          settings: |
+            {
+              "permissions": {
+                "allow": [
+                  "Bash(npm test)",
+                  "Bash(npm run lint)",
+                  "Bash(npm run build)",
+                  "Bash(git *)",
+                  "Read",
+                  "Write",
+                  "Edit",
+                  "Glob",
+                  "Grep"
+                ]
+              }
+            }

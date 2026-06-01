@@ -163,6 +163,9 @@ export async function handleMessage(
     );
     console.log(`[${userId}] Claude 回复完成，长度: ${fullText.length}`);
 
+    // 最终更新卡片，确保完整内容不被节流丢弃
+    await larkService.updateCard(replyMessageId, fullText);
+
     // 保存 assistant 回复
     history.push({ role: 'assistant', content: fullText });
   } catch (err) {

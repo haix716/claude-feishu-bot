@@ -22,7 +22,9 @@ export function generateCard(content: string) {
 }
 
 /**
- * 节流函数：限制函数调用频率
+ * 节流函数：限制函数调用频率，保证最后一次调用不被丢弃
+ * trailing-edge 模式：pending 期间的新调用会被暂存，当前调用完成后执行最新的一次
+ * 所有被暂存的调用共享同一个 trailing 结果
  */
 export function pThrottle<T extends (...args: any[]) => Promise<any>>(
   fn: T,
@@ -30,9 +32,17 @@ export function pThrottle<T extends (...args: any[]) => Promise<any>>(
 ): T {
   let lastCall = 0;
   let pending = false;
+  let latestArgs: any[] | null = null;
+  let waiters: Array<{ resolve: (v: any) => void; reject: (e: any) => void }> = [];
 
   return (async (...args: any[]) => {
-    if (pending) return;
+    if (pending) {
+      latestArgs = args;
+      return new Promise((resolve, reject) => {
+        waiters.push({ resolve, reject });
+      });
+    }
+
     const now = Date.now();
     const elapsed = now - lastCall;
     if (elapsed < intervalMs) {
@@ -40,7 +50,25 @@ export function pThrottle<T extends (...args: any[]) => Promise<any>>(
       await new Promise(r => setTimeout(r, intervalMs - elapsed));
       pending = false;
     }
+
     lastCall = Date.now();
-    return fn(...args);
+    const result = await fn(...args);
+
+    // 执行 pending 期间暂存的最新调用，resolve 所有等待者
+    if (latestArgs) {
+      const savedArgs = latestArgs;
+      const savedWaiters = waiters;
+      latestArgs = null;
+      waiters = [];
+      try {
+        lastCall = Date.now();
+        const trailingResult = await fn(...savedArgs);
+        for (const w of savedWaiters) w.resolve(trailingResult);
+      } catch (e) {
+        for (const w of savedWaiters) w.reject(e);
+      }
+    }
+
+    return result;
   }) as T;
 }

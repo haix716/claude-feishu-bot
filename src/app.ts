@@ -1,6 +1,6 @@
 import * as Lark from '@larksuiteoapi/node-sdk';
 import { larkService } from './lark';
-import { handleMessage, handleFileEvent } from './handler';
+import { handleMessage, handleFileEvent, handleImageMessage } from './handler';
 
 console.log('🚀 Claude 飞书助手启动中...');
 
@@ -38,12 +38,24 @@ const eventDispatcher = new Lark.EventDispatcher({}).register({
           console.log(`[${chatType}] [${userId}] 📎 ${fileName}`);
           await handleFileEvent(userId, chatId, chatType, messageId, fileName);
 
+        } else if (messageType === 'image') {
+          // 图片消息
+          let imageKey = '';
+          try {
+            imageKey = JSON.parse(event.message.content).image_key || '';
+          } catch {
+            imageKey = '';
+          }
+          if (!imageKey) return;
+          console.log(`[${chatType}] [${userId}] 🖼️ image`);
+          await handleImageMessage(userId, chatId, chatType, messageId, imageKey);
+
         } else {
           // 其他类型
           if (chatType === 'group' && messageId) {
-            await larkService.replyText(messageId, '目前支持文本消息和文件，请发送文字或附件');
+            await larkService.replyText(messageId, '目前支持文本、图片和文件消息，请发送文字、图片或附件');
           } else {
-            await larkService.sendText(chatId, '目前支持文本消息和文件，请发送文字或附件');
+            await larkService.sendText(chatId, '目前支持文本、图片和文件消息，请发送文字、图片或附件');
           }
         }
       } catch (err) {

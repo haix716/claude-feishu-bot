@@ -1,7 +1,8 @@
+import Anthropic from '@anthropic-ai/sdk';
 import { larkService } from './lark';
 import { streamClaude, ChatMessage, ChatContext } from './claude';
 import { config } from './config';
-import { pThrottle } from './util';
+import { pThrottle, validateFileSize } from './util';
 
 /** 每用户对话历史 */
 const conversations = new Map<string, ChatMessage[]>();
@@ -68,7 +69,7 @@ async function fetchContext(
 async function handleFileMessage(
   messageId: string,
   fileName: string
-): Promise<string | null> {
+): Promise<string | Anthropic.ContentBlockParam[] | null> {
   try {
     const msg = await larkService.getMessage(messageId);
     if (!msg?.items?.[0]?.content) return null;
@@ -77,8 +78,23 @@ async function handleFileMessage(
     const fileKey = content.file_key;
     if (!fileKey) return null;
 
-    const buffer = await larkService.getFileResource(messageId, fileKey);
+    const buffer = await larkService.getResource(messageId, fileKey, 'file');
     if (!buffer) return null;
+
+    // PDF 文件：作为 document 类型传给 Claude
+    if (/\.pdf$/i.test(fileName)) {
+      if (!validateFileSize(buffer, 30)) {
+        return `📎 文件 "${fileName}" 超过 30MB 限制，无法处理。`;
+      }
+      const base64 = buffer.toString('base64');
+      return [
+        { type: 'text', text: `用户发送了 PDF 文件 "${fileName}"：` } as Anthropic.TextBlockParam,
+        {
+          type: 'document',
+          source: { type: 'base64', media_type: 'application/pdf', data: base64 },
+        } as Anthropic.DocumentBlockParam,
+      ];
+    }
 
     // 文本文件直接读取内容
     if (/\.(txt|md|json|csv|xml|yaml|yml|log|py|js|ts|html|css|sh|sql)$/i.test(fileName)) {
@@ -100,19 +116,19 @@ async function handleFileMessage(
 export async function handleMessage(
   userId: string,
   chatId: string,
-  query: string,
+  query: string | Anthropic.ContentBlockParam[],
   chatType: string = 'p2p',
   messageId: string = ''
 ): Promise<void> {
-  // 群聊：清理 @mention
-  if (chatType === 'group') {
+  // 群聊：清理 @mention（仅文本消息）
+  if (chatType === 'group' && typeof query === 'string') {
     query = stripAtMention(query);
   }
 
-  if (!query) return;
+  if (!query || (Array.isArray(query) && query.length === 0)) return;
 
-  // /clear 命令
-  if (query.trim() === '/clear') {
+  // /clear 命令（仅文本消息）
+  if (typeof query === 'string' && query.trim() === '/clear') {
     conversations.delete(userId);
     if (chatType === 'group' && messageId) {
       await larkService.replyText(messageId, '对话已清除 ✅');
@@ -217,4 +233,63 @@ export async function handleFileEvent(
 
   // 把文件信息当作用户消息传给 Claude
   await handleMessage(userId, chatId, query, chatType, messageId);
+}
+
+/**
+ * 处理图片消息：下载图片，转 base64 传给 Claude
+ */
+export async function handleImageMessage(
+  userId: string,
+  chatId: string,
+  chatType: string,
+  messageId: string,
+  imageKey: string
+): Promise<void> {
+  console.log(`[${userId}] 收到图片: ${imageKey}`);
+
+  try {
+    const buffer = await larkService.getResource(messageId, imageKey, 'image');
+    if (!buffer) {
+      const fallback = '图片下载失败，请重新发送。';
+      if (chatType === 'group' && messageId) {
+        await larkService.replyText(messageId, fallback);
+      } else {
+        await larkService.sendText(chatId, fallback);
+      }
+      return;
+    }
+
+    if (!validateFileSize(buffer, 22)) {
+      const fallback = '图片超过 22MB 限制，请压缩后重新发送。';
+      if (chatType === 'group' && messageId) {
+        await larkService.replyText(messageId, fallback);
+      } else {
+        await larkService.sendText(chatId, fallback);
+      }
+      return;
+    }
+
+    const base64 = buffer.toString('base64');
+    const content: Anthropic.ContentBlockParam[] = [
+      { type: 'text', text: '用户发送了一张图片：' } as Anthropic.TextBlockParam,
+      {
+        type: 'image',
+        source: { type: 'base64', media_type: 'image/jpeg', data: base64 },
+      } as Anthropic.ImageBlockParam,
+    ];
+
+    await handleMessage(userId, chatId, content, chatType, messageId);
+  } catch (err) {
+    console.error(`[${userId}] handleImageMessage failed:`, err);
+    const errMsg = '图片处理出错，请重新发送。';
+    try {
+      if (chatType === 'group' && messageId) {
+        await larkService.replyText(messageId, errMsg);
+      } else {
+        await larkService.sendText(chatId, errMsg);
+      }
+    } catch (sendErr) {
+      console.error(`[${userId}] 发送错误消息也失败:`, sendErr);
+    }
+  }
 }

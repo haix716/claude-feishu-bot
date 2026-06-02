@@ -30,7 +30,8 @@
       "Bash(xargs kill)",
       "Bash(git tag *)",
       "Bash(git remote *)",
-      "Bash(git rm *)"
+      "Bash(git rm *)",
+      "WebSearch"
     ]
   },
   "hooks": {

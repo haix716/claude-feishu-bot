@@ -132,12 +132,16 @@ class LarkService {
     return null;
   }
 
-  /** 获取消息中的文件资源 */
-  async getFileResource(messageId: string, fileKey: string): Promise<Buffer | null> {
+  /** 获取消息中的资源（文件或图片） */
+  async getResource(
+    messageId: string,
+    fileKey: string,
+    type: 'file' | 'image' = 'file'
+  ): Promise<Buffer | null> {
     try {
       const resp = await this.client.im.messageResource.get({
         path: { message_id: messageId, file_key: fileKey },
-        params: { type: 'file' },
+        params: { type },
       });
       // SDK 返回的是文件流，需要转为 Buffer
       if (resp && typeof resp === 'object' && 'pipe' in resp) {
@@ -148,7 +152,7 @@ class LarkService {
         return Buffer.concat(chunks);
       }
     } catch (err) {
-      console.error('getFileResource failed:', err);
+      console.error('getResource failed:', err);
     }
     return null;
   }

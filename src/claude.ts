@@ -8,7 +8,7 @@ const client = new Anthropic({
 
 export interface ChatMessage {
   role: 'user' | 'assistant';
-  content: string;
+  content: string | Anthropic.ContentBlockParam[];
 }
 
 export interface ChatContext {

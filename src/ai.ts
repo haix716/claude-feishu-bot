@@ -22,7 +22,7 @@ export async function streamAI(
   onChunk: (text: string) => void,
   ctx?: ChatContext,
 ): Promise<string> {
-  const systemParts = ['你是一个有用的助手。'];
+  const systemParts = [config.systemPrompt];
   if (ctx?.userName) systemParts.push(`用户名称：${ctx.userName}`);
   if (ctx?.chatName) systemParts.push(`群聊名称：${ctx.chatName}`);
   if (ctx?.chatType === 'group') systemParts.push('当前在群聊中，请简洁回复。');

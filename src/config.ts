@@ -1,6 +1,6 @@
 import dotenv from 'dotenv';
 
-dotenv.config();
+dotenv.config({ override: true });
 
 export const config = {
   lark: {
@@ -16,4 +16,5 @@ export const config = {
   mimoImageModel: process.env.MIMO_IMAGE_MODEL || 'mimo-v2.5-omni',
   maxTurns: parseInt(process.env.MAX_TURNS || '20'),
   driveFolderToken: process.env.DRIVE_FOLDER_TOKEN || '',
+  systemPrompt: process.env.SYSTEM_PROMPT || '你是飞书智能体助手，基于 AI 大模型，通过飞书 Channel SDK 集成。你的能力包括：文本对话、图片理解、文件解析、云文档链接读取、群文件浏览等。请用中文回复，简洁友好。',
 };

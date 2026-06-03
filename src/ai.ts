@@ -56,7 +56,7 @@ export async function streamAI(
 
 export async function analyzeImage(base64Image: string): Promise<string> {
   const response = await openai.chat.completions.create({
-    model: process.env.MIMO_IMAGE_MODEL || 'mimo-v2.5-omni',
+    model: config.mimoImageModel,
     messages: [{
       role: 'user',
       content: [

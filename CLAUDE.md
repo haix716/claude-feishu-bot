@@ -60,14 +60,6 @@ src/
 2. 等用户在飞书里测试确认功能正常
 3. **用户明确确认后**再 commit → 敏感信息扫描 → push
 
-### 问题反馈模板
-测试发现问题时，提供以下信息（第 2 条最关键）：
-```
-1. 做了什么：（群聊/私聊，发了什么消息）
-2. 机器人回复：（直接复制粘贴，或截图）
-3. 期望是什么：（应该怎样）
-```
-
 ### 任务大小判断
 - **直接做**：单文件修改、小 bug 修复、明确的单步操作
 - **先讨论**：多文件改动、新功能、有多种实现方案
@@ -82,3 +74,36 @@ src/
 - 密钥、token、密码不进代码、不进 commit、不进日志
 - API key 只存 `.env`（被 .gitignore 排除）
 - 涉及 API key 的操作必须让晓燕文字确认
+
+## 多 Agent 并行开发规范
+
+当需要并行开发 3+ 个独立任务时，使用 Agent View + Background Sessions。
+
+### 角色定义
+- **PM（主 agent）**：需求分析、任务拆分、写 task brief、监控进度、合并交付
+- **Developer（`.claude/agents/developer.md`）**：写代码、跑测试、提交
+- **Reviewer（`.claude/agents/reviewer.md`）**：审查代码，只读不写
+
+### 工作流程
+1. PM 理解需求，拆分为独立任务
+2. PM 为每个任务写 task brief（目标、当前代码、改动要求、验收标准）
+3. 通过 `claude agents` 派发 developer agent 并行执行
+4. Developer 完成后，自动 hooks 验证（lint + test）
+5. PM review 代码，不合格打回
+6. 合并分支，更新文档
+
+### Task Brief 必须包含
+- 一句话目标
+- 具体改动哪个文件
+- 不要动哪些文件（其他 agent 负责）
+- 验收标准（lint 0 error、测试通过、功能正常）
+
+### 质量门禁
+- PreToolUse hook：敏感信息扫描
+- PostToolUse hook：自动 lint
+- SubagentStop hook：验证 agent 产出（lint + test + commit）
+
+### 并行原则
+- 独立任务并行，有依赖的串行
+- 瓶颈任务优先启动
+- 不要信任 agent 的产出，全部要验证

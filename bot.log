@@ -24,3 +24,63 @@
 [ou_ef889a517fa60a9e8f314511d68084ca] 开始处理图片: img_v3_02129_e6cd034a-ac92-41cd-8b74-66351d7390cg
 [ou_ef889a517fa60a9e8f314511d68084ca] 下载图片中...
 [ou_ef889a517fa60a9e8f314511d68084ca] 图片下载完成，大小: 180562 bytes
+[info]: [ '[ws]', 'reconnect' ]
+[error]: [ '[ws]', 'getaddrinfo ENOTFOUND open.feishu.cn' ]
+[info]: [ 'ws', 'unable to connect to the server after trying 1 times")' ]
+[error]: [ '[ws]', 'getaddrinfo ENOTFOUND open.feishu.cn' ]
+[info]: [ 'ws', 'unable to connect to the server after trying 2 times")' ]
+[error]: [ '[ws]', 'getaddrinfo ENOTFOUND open.feishu.cn' ]
+[info]: [ 'ws', 'unable to connect to the server after trying 3 times")' ]
+[info]: [ '[ws]', 'reconnect' ]
+[error]: [ '[ws]', 'timeout of 15000ms exceeded' ]
+[info]: [ 'ws', 'unable to connect to the server after trying 1 times")' ]
+[info]: [ '[ws]', 'reconnect' ]
+[info]: [ '[ws]', 'reconnect' ]
+[info]: [ '[ws]', 'reconnect' ]
+[info]: [ '[ws]', 'reconnect' ]
+[info]: [ '[ws]', 'reconnect' ]
+[info]: [ '[ws]', 'reconnect' ]
+[info]: [ '[ws]', 'reconnect' ]
+[info]: [ '[ws]', 'reconnect' ]
+[info]: [ '[ws]', 'reconnect' ]
+[info]: [ '[ws]', 'reconnect' ]
+[info]: [ '[ws]', 'reconnect' ]
+[info]: [ '[ws]', 'reconnect' ]
+[info]: [ '[ws]', 'reconnect' ]
+[info]: [ '[ws]', 'reconnect' ]
+[info]: [ '[ws]', 'reconnect' ]
+[info]: [ '[ws]', 'reconnect' ]
+[info]: [ '[ws]', 'reconnect' ]
+[info]: [ '[ws]', 'reconnect' ]
+[info]: [ '[ws]', 'reconnect' ]
+[info]: [ '[ws]', 'reconnect' ]
+[info]: [ '[ws]', 'reconnect' ]
+[info]: [ '[ws]', 'reconnect' ]
+[info]: [ '[ws]', 'reconnect' ]
+[info]: [ '[ws]', 'reconnect' ]
+[info]: [ '[ws]', 'reconnect' ]
+[info]: [ '[ws]', 'reconnect' ]
+[info]: [ '[ws]', 'reconnect' ]
+[info]: [ '[ws]', 'reconnect' ]
+[info]: [ '[ws]', 'reconnect' ]
+[error]: [ '[ws]', 'getaddrinfo ENOTFOUND open.feishu.cn' ]
+[info]: [ 'ws', 'unable to connect to the server after trying 1 times")' ]
+[error]: [ '[ws]', 'getaddrinfo ENOTFOUND open.feishu.cn' ]
+[info]: [ 'ws', 'unable to connect to the server after trying 2 times")' ]
+[error]: [ '[ws]', 'getaddrinfo ENOTFOUND open.feishu.cn' ]
+[info]: [ 'ws', 'unable to connect to the server after trying 3 times")' ]
+[error]: [
+  '[ws]',
+  "Hostname/IP does not match certificate's altnames: Host: open.feishu.cn. is not in the cert's altnames: DNS:wxmini.wiwide.com, DNS:www.wxmini.wiwide.com"
+]
+[info]: [ 'ws', 'unable to connect to the server after trying 4 times")' ]
+[error]: [
+  '[ws]',
+  "Hostname/IP does not match certificate's altnames: Host: open.feishu.cn. is not in the cert's altnames: DNS:wxmini.wiwide.com, DNS:www.wxmini.wiwide.com"
+]
+[info]: [ 'ws', 'unable to connect to the server after trying 5 times")' ]
+[error]: [
+  '[ws]',
+  "Hostname/IP does not match certificate's altnames: Host: open.feishu.cn. is not in the cert's altnames: DNS:wxmini.wiwide.com, DNS:www.wxmini.wiwide.com"
+]
+[info]: [ 'ws', 'unable to connect to the server after trying 6 times")' ]

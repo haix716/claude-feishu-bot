@@ -1,22 +1,22 @@
-# Claude 飞书助手 / Claude Feishu Bot
+# Claude 飞书智能体 / Claude Feishu Agent
 
-一个基于 Claude API 的飞书机器人，支持流式回复、多轮对话、卡片消息更新、多模态内容处理。
+一个基于 Channel SDK 的飞书智能体助手，支持流式回复、多轮对话、卡片消息更新、多模态内容处理。
 
-A Feishu/Lark bot powered by Claude API, with streaming responses, multi-turn conversation, card message updates, and multimodal content handling.
+A Feishu/Lark intelligent agent powered by Channel SDK, with streaming responses, multi-turn conversation, card message updates, and multimodal content handling.
 
 ---
 
 ## 功能 / Features
 
 ### 基础功能
-- 🤖 接收飞书文本消息，调用 Claude 生成回复
-- 📡 WebSocket 长连接，无需公网 IP
-- 💬 流式更新卡片消息（1s 节流）
+- 🤖 接收飞书文本消息，调用 AI 生成回复
+- 📡 Channel SDK 自动管理 WebSocket 长连接
+- 💬 流式更新卡片消息（内置节流和打字机动画）
 - 🧠 每用户独立的多轮对话历史
 - 🔄 `/clear` 命令清空对话
 - 🔒 并发控制，同一用户同时只处理一条消息
 
-### 多模态功能 (v1.2.0)
+### 多模态功能
 - 🖼️ 图片自动保存到飞书云盘 + AI 内容分析
 - 🎵 音视频自动保存到飞书云盘
 - 📄 二进制文件导入（xlsx/docx → 飞书文档，可读取内容）
@@ -24,8 +24,8 @@ A Feishu/Lark bot powered by Claude API, with streaming responses, multi-turn co
 - 📁 群文件浏览与读取（「群文件」/「读文件 xxx」指令）
 
 ### 智能文件管理
-- 📂 自动创建「机器人文件」文件夹结构（图片/音视频/文件 + 日期子目录）
-- 🧠 Claude 意图理解：发图片后说「保存到 xxx」自动归档
+- 📂 自动创建「智能体文件」文件夹结构（图片/音视频/文件 + 日期子目录）
+- 🧠 AI 意图理解：发图片后说「保存到 xxx」自动归档
 
 ---
 
@@ -33,12 +33,12 @@ A Feishu/Lark bot powered by Claude API, with streaming responses, multi-turn co
 
 ```
 src/
-├── app.ts        # 入口：Lark WSClient + Express
+├── app.ts        # 入口：createLarkChannel + Channel SDK
 ├── config.ts     # 环境变量配置
-├── lark.ts       # 飞书 API 封装（消息收发、云盘操作、文档读取）
-├── claude.ts     # Claude/MiMo API 封装（流式对话 + 图片分析）
+├── ai.ts         # AI API 封装（OpenAI SDK，流式 + 图片理解）
+├── lark.ts       # 飞书文件/文档操作封装（Client）
 ├── handler.ts    # 消息处理主逻辑（路由 + 对话 + 文件处理）
-└── util.ts       # 工具函数（节流、卡片生成、链接解析）
+└── util.ts       # 工具函数（正则、文件解析）
 ```
 
 ## 快速开始 / Quick Start
@@ -46,8 +46,8 @@ src/
 ### 1. 安装依赖 / Install
 
 ```bash
-git clone https://github.com/haix716/claude-feishu-bot.git
-cd claude-feishu-bot
+git clone https://github.com/haix716/claude-feishu-agent.git
+cd claude-feishu-agent
 npm install
 ```
 
@@ -65,10 +65,10 @@ APP_ID=cli_xxx
 APP_SECRET=xxx
 LARK_DOMAIN=https://open.feishu.cn
 
-# Claude API / Model API (https://console.anthropic.com)
-ANTHROPIC_API_KEY=sk-ant-xxx
-ANTHROPIC_BASE_URL=https://api.anthropic.com
-CLAUDE_MODEL=claude-sonnet-4-20250514
+# AI API (OpenAI 兼容格式)
+ANTHROPIC_API_KEY=sk-xxx
+ANTHROPIC_BASE_URL=https://api.xiaomimimo.com/v1
+CLAUDE_MODEL=mimo-v2.5-pro
 
 # 可选：图片分析模型（默认 mimo-v2.5-omni）
 # MIMO_IMAGE_MODEL=mimo-v2.5-omni
@@ -77,7 +77,13 @@ CLAUDE_MODEL=claude-sonnet-4-20250514
 # DRIVE_FOLDER_TOKEN=xxx
 ```
 
-### 3. 飞书应用配置 / Feishu App Setup
+### 3. 飞书智能体应用配置 / Feishu Agent Setup
+
+**方式一：一键创建（推荐）**
+
+运行应用时会自动生成二维码，扫码即可创建智能体应用，自动预置所有权限和事件订阅。
+
+**方式二：手动创建**
 
 1. 在 [飞书开发者后台](https://open.feishu.cn/app) 创建自建应用
 2. 启用机器人功能
@@ -89,6 +95,7 @@ CLAUDE_MODEL=claude-sonnet-4-20250514
    - `drive:drive` — 云盘文件读写
    - `docx:document:readonly` — 读取云文档
    - `wiki:wiki:readonly` — 读取知识库
+   - `cardkit:card:write` — 卡片交互
 4. 事件订阅 → 订阅方式 → 选择「使用长连接接收事件」
 5. 添加事件：`im.message.receive_v1`
 6. 发布应用
@@ -103,9 +110,9 @@ npm run lint    # 代码检查 / Lint
 npm test        # 运行测试 / Test
 ```
 
-启动后在飞书中找到你的 bot，发条消息即可。
+启动后在飞书中找到你的智能体，发条消息即可。
 
-After starting, find your bot in Feishu and send a message.
+After starting, find your agent in Feishu and send a message.
 
 ## 环境变量 / Environment Variables
 
@@ -114,12 +121,11 @@ After starting, find your bot in Feishu and send a message.
 | `APP_ID` | ✅ | 飞书应用 ID | — |
 | `APP_SECRET` | ✅ | 飞书应用密钥 | — |
 | `LARK_DOMAIN` | | 飞书 API 域名 | `https://open.feishu.cn` |
-| `ANTHROPIC_API_KEY` | ✅ | Claude/MiMo API key | — |
-| `ANTHROPIC_BASE_URL` | | API 地址 | `https://api.anthropic.com` |
+| `ANTHROPIC_API_KEY` | ✅ | AI API key | — |
+| `ANTHROPIC_BASE_URL` | | API 地址（OpenAI 兼容） | `https://api.anthropic.com` |
 | `CLAUDE_MODEL` | | 对话模型名 | `claude-sonnet-4-20250514` |
 | `MIMO_IMAGE_MODEL` | | 图片分析模型 | `mimo-v2.5-omni` |
 | `MAX_TURNS` | | 对话历史最大轮数 | `20` |
-| `PORT` | | HTTP 端口 | `3000` |
 | `DRIVE_FOLDER_TOKEN` | | 云盘文件夹 token（不配置则自动创建） | — |
 | `NO_PROXY` | | 绕过代理的域名 | — |
 
@@ -127,7 +133,7 @@ After starting, find your bot in Feishu and send a message.
 
 | 指令 | 说明 |
 |------|------|
-| 发送任意文本 | 与 Claude 对话 |
+| 发送任意文本 | 与 AI 对话 |
 | `/clear` | 清空对话历史 |
 | 发送图片 | 自动保存到云盘 + AI 分析内容 |
 | 发送音视频 | 自动保存到云盘 |
@@ -140,7 +146,7 @@ After starting, find your bot in Feishu and send a message.
 ## 技术栈 / Tech Stack
 
 - **Runtime**: Node.js >= 20 + TypeScript
-- **飞书 SDK**: [@larksuiteoapi/node-sdk](https://github.com/larksuite/node-sdk)
+- **飞书 SDK**: [@larksuiteoapi/node-sdk](https://github.com/larksuite/node-sdk)（Channel SDK + Client）
 - **AI SDK**: [openai](https://github.com/openai/openai-node)（OpenAI 兼容格式，支持 MiMo/Claude）
 - **测试**: Node.js 内置 test runner
 

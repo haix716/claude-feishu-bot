@@ -1,14 +1,47 @@
 # Changelog
 
+## [2.0.0] - 2026-06-03
+
+### Added
+- **Channel SDK 集成**：使用 createLarkChannel 替换手动 WSClient + EventDispatcher
+- **OpenAI SDK 迁移**：从 Anthropic SDK 迁移到 OpenAI SDK（兼容 MiMo/Claude）
+- **图片理解功能**：新增 analyzeImage 函数，支持 MiMo-V2.5-Omni 多模态分析
+- **智能体应用支持**：支持通过 lark.registerApp() 一键创建飞书智能体应用
+- **多 Agent 并行开发**：3 个 Agent 并行开发（Channel SDK + SDK 迁移 + Config/Utils）
+- **Hooks 质量门禁**：PreToolUse 安全检查 + PostToolUse 自动 lint
+
+### Changed
+- **项目重命名**：claude-feishu-bot → claude-feishu-agent
+- **架构重构**：
+  - app.ts：100 行 → 30 行（createLarkChannel 替换 EventDispatcher）
+  - lark.ts：395 行 → 150 行（删除 5 个消息方法，保留文件操作）
+  - handler.ts：712 行 → 500 行（适配 NormalizedMessage + channel.stream()）
+  - claude.ts → ai.ts：58 行 → 73 行（OpenAI SDK + 图片理解）
+- **流式输出**：从手动 card_update 改为 channel.stream()（内置节流和打字机动画）
+- **消息发送**：从 larkService.sendCard/replyText 改为 channel.send()
+- **文件夹名称**：「机器人文件」→「智能体文件」
+- **listFiles API**：从 drive.file.list 改为 im.v1.chat.file.list
+
+### Fixed
+- **folderToken 一致性**：handleMediaMessage/handleBinaryFile 使用 rootFolderToken
+- **云文档链接正则**：支持子域名（xxx.feishu.cn）和国际版（larksuite.com）
+- **群文件 API**：改用 im.v1.chat.file.list
+
+### Removed
+- `@anthropic-ai/sdk` 依赖
+- `generateCard` 函数（Channel SDK 自动处理）
+- `throttledUpdate` 函数（Channel SDK 内置节流）
+- `WSClient` 和 `EventDispatcher` 手动配置
+
 ## [1.2.0] - 2026-06-02
 
 ### Added
 - **图片自动保存**：收到图片自动保存到飞书云盘，自动创建日期文件夹
 - **音视频自动保存**：收到音视频自动上传到飞书云盘
 - **二进制文件导入**：xlsx/docx 通过飞书导入 API 转换后读取内容
-- **飞书云文档链接解析**：发送飞书文档链接，bot 自动读取并总结
-- **群文件浏览**：@bot 群文件 列出群文件夹中的文件
-- **自动创建文件夹**：bot 启动时自动在飞书云盘创建"机器人文件"文件夹
+- **飞书云文档链接解析**：发送飞书文档链接，agent 自动读取并总结
+- **群文件浏览**：@agent 群文件 列出群文件夹中的文件
+- **自动创建文件夹**：agent 启动时自动在飞书云盘创建"智能体文件"文件夹
 - 5 个 worktree 并行开发，全部合并到 main
 
 ### Changed

@@ -4,14 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目简介
 
-Claude 助手飞书机器人。用户在飞书中发消息，机器人调用 Claude API 生成回复，流式更新卡片消息。
+飞书智能体助手。用户在飞书中发消息，智能体调用 AI 生成回复，流式更新卡片消息。基于 Channel SDK 构建。
 
 ## 技术栈
 
 - Node.js >= 20 + TypeScript
-- `@larksuiteoapi/node-sdk` — 飞书 SDK（WebSocket 长连接）
-- `@anthropic-ai/sdk` — Claude API（streaming）
-- `dotenv` + `express`
+- `@larksuiteoapi/node-sdk` — 飞书 SDK（Channel SDK + Client）
+- `openai` — OpenAI 兼容 API（支持 MiMo / Claude）
+- `dotenv`
 - ESLint（`npx eslint src/`，0 error 才能 commit）
 
 ## 运行命令
@@ -31,32 +31,32 @@ npm run lint            # 检查代码规范
 
 ```
 src/
-├── app.ts        # 入口：Lark WSClient + Express
+├── app.ts        # 入口：createLarkChannel + Channel SDK
 ├── config.ts     # 环境变量配置
-├── lark.ts       # 飞书消息收发封装
-├── claude.ts     # Claude API streaming 封装
+├── ai.ts         # AI API 封装（OpenAI SDK，流式 + 图片理解）
+├── lark.ts       # 飞书文件/文档操作封装（Client）
 ├── handler.ts    # 消息处理主逻辑（路由 + 对话管理）
-└── util.ts       # 工具函数（节流、卡片生成）
+└── util.ts       # 工具函数（正则、文件解析）
 ```
 
-核心流程：`用户消息 → handler → Claude stream → 流式更新飞书卡片`
+核心流程：`用户消息 → Channel SDK → handler → AI stream → channel.stream() 流式更新`
 
 ## 环境变量
 
 - `APP_ID` / `APP_SECRET` — 飞书应用凭据
 - `LARK_DOMAIN` — 飞书 API 域名
-- `ANTHROPIC_API_KEY` — Claude API key
+- `ANTHROPIC_API_KEY` — AI API key
 - `ANTHROPIC_BASE_URL` — API 地址（支持第三方兼容服务）
-- `CLAUDE_MODEL` — 模型名
+- `CLAUDE_MODEL` — 对话模型名
+- `MIMO_IMAGE_MODEL` — 图片分析模型（默认 mimo-v2.5-omni）
 - `MAX_TURNS` — 对话历史最大轮数
-- `PORT` — HTTP 端口
-- `NO_PROXY` — 绕过代理的域名
+- `DRIVE_FOLDER_TOKEN` — 云盘文件夹 token（可选，自动创建）
 
 ## 工作流规范
 
 遵循全局 CLAUDE.md 的「讨论→确认→执行」流程：
 
-1. **先停 bot** → 改代码 → 编译 + lint（0 error）→ 重启 bot
+1. **先停智能体** → 改代码 → 编译 + lint（0 error）→ 重启智能体
 2. 等用户在飞书里测试确认功能正常
 3. **用户明确确认后**再 commit → 敏感信息扫描 → push
 

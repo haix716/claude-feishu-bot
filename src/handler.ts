@@ -1,8 +1,14 @@
 import { larkService } from './lark';
-import { streamAI, ChatMessage, ChatContext } from './ai';
+import { streamAI, streamAIWithTools, ChatMessage, ChatContext } from './ai';
 import { config } from './config';
 import { validateFileSize, sanitizeFileName, getFileExtension, getImportTargetType, extractFeishuDocLinks, formatFileList, parseFileCommand } from './util';
+import { ToolManager, GetTimeTool, SearchDocTool } from './tools';
 import type { LarkChannel, NormalizedMessage } from '@larksuiteoapi/node-sdk';
+
+// 初始化工具管理器
+const toolManager = new ToolManager();
+toolManager.register(new GetTimeTool());
+toolManager.register(new SearchDocTool());
 
 /** 每用户对话历史 */
 const conversations = new Map<string, ChatMessage[]>();
@@ -75,6 +81,26 @@ async function getOrCreateFolder(path: string): Promise<string> {
 function getTodayDate(): string {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * 用正则匹配用户对图片的意图（不需要调大模型）
+ */
+function parseImageIntent(query: string): { action: string; folder: string; fileName: string } {
+  // 保存意图：保存、存到、放到、存入 + 可选的文件夹路径
+  const saveMatch = query.match(/(?:保存|存到|放到|存入|存到)\s*(.*)/);
+  if (saveMatch) {
+    const folder = saveMatch[1]?.trim() || '未整理';
+    return { action: 'save', folder, fileName: `image_${Date.now()}` };
+  }
+
+  // 删除意图
+  if (query.match(/不要|删除|取消|丢掉|扔掉/)) {
+    return { action: 'discard', folder: '', fileName: '' };
+  }
+
+  // 聊天意图（默认）
+  return { action: 'chat', folder: '', fileName: '' };
 }
 
 /**
@@ -289,50 +315,16 @@ export async function handleMessage(
     return;
   }
 
-  // 有待保存图片时，用 AI 理解用户意图
+  // 有待保存图片时，用正则匹配用户意图（不需要调大模型）
   if (pendingImages.has(userId)) {
     const pending = pendingImages.get(userId)!;
 
-    // 用 AI 理解用户意图
-    const intentPrompt = `用户刚收到一张图片（${(pending.buffer.length / 1024).toFixed(1)}KB），现在说："${query}"
+    // 用正则匹配用户意图
+    const intent = parseImageIntent(query);
 
-请解析用户的意图，返回 JSON 格式：
-{
-  "action": "save" | "discard" | "chat",
-  "folder": "文件夹路径（如 test、工作/项目A）",
-  "fileName": "文件名（不含扩展名）",
-  "reply": "给用户的回复（如果 action 是 chat）"
-}
-
-规则：
-- 如果用户说"保存"、"存到"、"放到"等，action 是 "save"
-- 如果用户说"不要了"、"删除"、"取消"，action 是 "discard"
-- 如果用户没提到保存相关，action 是 "chat"，正常回复
-- folder 默认是 "未整理"
-- fileName 默认是 "图片_${Date.now()}"
-- 只返回 JSON，不要其他内容`;
-
-    try {
-      const intentResult = await streamAI(
-        [{ role: 'user', content: intentPrompt }],
-        () => {} // 不需要流式更新
-      );
-
-      // 解析 AI 返回的 JSON
-      let intent: any;
-      try {
-        // 提取 JSON（可能被 markdown 包裹）
-        const jsonMatch = intentResult.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          intent = JSON.parse(jsonMatch[0]);
-        }
-      } catch {
-        intent = { action: 'chat', reply: intentResult };
-      }
-
-      if (intent.action === 'save') {
-        const folder = sanitizeFileName(intent.folder || '未整理');
-        const fileName = sanitizeFileName((intent.fileName || `image_${Date.now()}`) + '.jpg');
+    if (intent.action === 'save') {
+      const folder = sanitizeFileName(intent.folder || '未整理');
+      const fileName = sanitizeFileName((intent.fileName || `image_${Date.now()}`) + '.jpg');
 
         // 创建文件夹并保存
         const today = getTodayDate();
@@ -351,23 +343,6 @@ export async function handleMessage(
         pendingImages.delete(userId);
         await handleMessage(channel, msg);
       }
-    } catch (err) {
-      console.error('意图解析失败:', err);
-      // 回退到简单匹配
-      if (/保存|存|放/.test(query)) {
-        const today = getTodayDate();
-        const folderToken = await getOrCreateFolder(`未整理/${today}`);
-        const fileName = sanitizeFileName(`image_${Date.now()}.jpg`);
-        const fileToken = await larkService.uploadFile(pending.buffer, fileName, folderToken);
-        const url = `https://feishu.cn/file/${fileToken}`;
-        const replyMsg = `🖼️ 图片已保存\n文件夹：未整理/${today}\n文件：${fileName}\n${url}`;
-        pendingImages.delete(userId);
-        await channel.send(chatId, { text: replyMsg }, { replyTo: messageId });
-      } else {
-        pendingImages.delete(userId);
-        await handleMessage(channel, msg);
-      }
-    }
     return;
   }
 
@@ -420,12 +395,12 @@ export async function handleMessage(
     await channel.stream(chatId, {
       markdown: async (s) => {
         let lastText = '';
-        fullText = await streamAI(history, (text) => {
+        fullText = await streamAIWithTools(history, (text) => {
           if (text !== lastText) {
             s.setContent(text);
             lastText = text;
           }
-        }, ctx);
+        }, ctx, toolManager);
       },
     }, { replyTo: messageId });
     console.log(`[${userId}] AI 回复完成，长度: ${fullText.length}`);

@@ -1,5 +1,6 @@
 import OpenAI from 'openai';
 import { config } from './config';
+import { ToolManager, ToolDefinition } from './tools';
 
 const openai = new OpenAI({
   apiKey: config.ai.apiKey,
@@ -17,16 +18,28 @@ export interface ChatContext {
   chatType?: string;
 }
 
+function getCurrentDate(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+function buildSystemPrompt(ctx?: ChatContext): string {
+  const systemParts = [
+    config.systemPrompt,
+    `当前日期：${getCurrentDate()}`,
+  ];
+  if (ctx?.userName) systemParts.push(`用户名称：${ctx.userName}`);
+  if (ctx?.chatName) systemParts.push(`群聊名称：${ctx.chatName}`);
+  if (ctx?.chatType === 'group') systemParts.push('当前在群聊中，请简洁回复。');
+  return systemParts.join('\n');
+}
+
 export async function streamAI(
   messages: ChatMessage[],
   onChunk: (text: string) => void,
   ctx?: ChatContext,
 ): Promise<string> {
-  const systemParts = [config.systemPrompt];
-  if (ctx?.userName) systemParts.push(`用户名称：${ctx.userName}`);
-  if (ctx?.chatName) systemParts.push(`群聊名称：${ctx.chatName}`);
-  if (ctx?.chatType === 'group') systemParts.push('当前在群聊中，请简洁回复。');
-  const systemPrompt = systemParts.join('\n');
+  const systemPrompt = buildSystemPrompt(ctx);
 
   const openaiMessages = [
     { role: 'system' as const, content: systemPrompt },
@@ -52,6 +65,94 @@ export async function streamAI(
     }
   }
   return fullText;
+}
+
+/**
+ * 支持工具调用的 AI 生成（最多 2 轮工具调用）
+ *
+ * 流程：
+ * 1. 第一次调用，带工具定义
+ * 2. 如果模型要调工具 → 执行工具 → 第二次调用，带工具结果
+ * 3. 如果不需要工具 → 走流式输出
+ */
+export async function streamAIWithTools(
+  messages: ChatMessage[],
+  onChunk: (text: string) => void,
+  ctx?: ChatContext,
+  toolManager?: ToolManager,
+): Promise<string> {
+  if (!toolManager || toolManager.size === 0) {
+    // 没有工具，走普通流程
+    return streamAI(messages, onChunk, ctx);
+  }
+
+  const systemPrompt = buildSystemPrompt(ctx);
+  const tools = toolManager.getDefinitions();
+
+  const openaiMessages: OpenAI.ChatCompletionMessageParam[] = [
+    { role: 'system', content: systemPrompt },
+    ...messages.map(m => ({
+      role: m.role as 'user' | 'assistant',
+      content: m.content,
+    })),
+  ];
+
+  // 最多 2 轮工具调用
+  for (let round = 0; round < 2; round++) {
+    const response = await openai.chat.completions.create({
+      model: config.ai.model,
+      messages: openaiMessages,
+      tools: tools.map(t => ({
+        type: 'function' as const,
+        function: {
+          name: t.name,
+          description: t.description,
+          parameters: t.parameters,
+        },
+      })),
+      max_tokens: 4096,
+    });
+
+    const choice = response.choices[0];
+
+    // 如果模型要调工具
+    if (choice.finish_reason === 'tool_calls' && choice.message.tool_calls) {
+      // 添加模型的回复到消息历史
+      openaiMessages.push(choice.message);
+
+      // 执行所有工具调用
+      for (const toolCall of choice.message.tool_calls) {
+        if (toolCall.type !== 'function') continue;
+        const params = JSON.parse(toolCall.function.arguments);
+        const result = await toolManager.execute(toolCall.function.name, params);
+
+        // 添加工具结果到消息历史
+        openaiMessages.push({
+          role: 'tool',
+          tool_call_id: toolCall.id,
+          content: result,
+        });
+      }
+      // 继续下一轮
+      continue;
+    }
+
+    // 不需要工具，返回结果
+    const content = choice.message.content || '';
+    onChunk(content);
+    return content;
+  }
+
+  // 2 轮工具调用后，强制生成最终回复（不带工具）
+  const finalResponse = await openai.chat.completions.create({
+    model: config.ai.model,
+    messages: openaiMessages,
+    max_tokens: 4096,
+  });
+
+  const finalContent = finalResponse.choices[0]?.message?.content || '';
+  onChunk(finalContent);
+  return finalContent;
 }
 
 export async function analyzeImage(base64Image: string): Promise<string> {

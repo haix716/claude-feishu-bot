@@ -1,8 +1,8 @@
-import Anthropic from '@anthropic-ai/sdk';
 import { larkService } from './lark';
-import { streamClaude, ChatMessage, ChatContext } from './claude';
+import { streamAI, ChatMessage, ChatContext } from './ai';
 import { config } from './config';
-import { pThrottle, validateFileSize, sanitizeFileName, getFileExtension, getImportTargetType, extractFeishuDocLinks, formatFileList, parseFileCommand } from './util';
+import { validateFileSize, sanitizeFileName, getFileExtension, getImportTargetType, extractFeishuDocLinks, formatFileList, parseFileCommand } from './util';
+import type { LarkChannel, NormalizedMessage } from '@larksuiteoapi/node-sdk';
 
 /** 每用户对话历史 */
 const conversations = new Map<string, ChatMessage[]>();
@@ -19,7 +19,7 @@ const folderCache = new Map<string, string>();
 /** 根文件夹 token（启动时自动获取） */
 let rootFolderToken = '';
 
-/** 初始化根文件夹：自动创建"机器人文件"文件夹 */
+/** 初始化根文件夹：自动创建"智能体文件"文件夹 */
 export async function initRootFolder(): Promise<void> {
   try {
     if (config.driveFolderToken) {
@@ -28,20 +28,20 @@ export async function initRootFolder(): Promise<void> {
       return;
     }
 
-    // 尝试自动获取根文件夹并创建"机器人文件"
+    // 尝试自动获取根文件夹并创建"智能体文件"
     console.log('📁 尝试自动获取根文件夹...');
     try {
       const rootToken = await larkService.getRootFolder();
       console.log('📁 根文件夹获取成功');
 
-      // 创建"机器人文件"文件夹
-      console.log('📁 创建"机器人文件"文件夹...');
-      rootFolderToken = await larkService.createFolder('机器人文件', rootToken);
-      console.log('✅ 机器人文件夹创建成功');
+      // 创建"智能体文件"文件夹
+      console.log('📁 创建"智能体文件"文件夹...');
+      rootFolderToken = await larkService.createFolder('智能体文件', rootToken);
+      console.log('✅ 智能体文件夹创建成功');
     } catch (err: any) {
       console.log(`⚠️ 自动创建文件夹失败: ${err.message}`);
       console.log('   请在 .env 文件中设置 DRIVE_FOLDER_TOKEN（飞书云盘文件夹 token）');
-      console.log('   或者手动在飞书云盘创建"机器人文件"文件夹并复制其 token');
+      console.log('   或者手动在飞书云盘创建"智能体文件"文件夹并复制其 token');
     }
   } catch (err) {
     console.error('❌ 初始化根文件夹失败:', err);
@@ -76,23 +76,6 @@ function getTodayDate(): string {
   const now = new Date();
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 }
-
-/** 节流更新卡片（1000ms 间隔，避免飞书频率限制） */
-const throttledUpdate = pThrottle(
-  async (messageId: string, content: string) => {
-    try {
-      await larkService.updateCard(messageId, content);
-    } catch (err: any) {
-      // 飞书频率限制错误静默忽略，下次节流调用会重试
-      if (err?.data?.code === 230020) {
-        console.warn('[throttledUpdate] 飞书频率限制，跳过本次更新');
-        return;
-      }
-      throw err;
-    }
-  },
-  1000
-);
 
 /**
  * 从飞书文档链接获取内容
@@ -164,7 +147,7 @@ async function fetchContext(
 async function handleFileMessage(
   messageId: string,
   fileName: string
-): Promise<string | Anthropic.ContentBlockParam[] | null> {
+): Promise<string | null> {
   try {
     const msg = await larkService.getMessage(messageId);
     if (!msg?.items?.[0]?.content) return null;
@@ -176,19 +159,12 @@ async function handleFileMessage(
     const buffer = await larkService.getResource(messageId, fileKey, 'file');
     if (!buffer) return null;
 
-    // PDF 文件：作为 document 类型传给 Claude
+    // PDF 文件：描述为文本（OpenAI SDK 不支持 document block）
     if (/\.pdf$/i.test(fileName)) {
       if (!validateFileSize(buffer, 30)) {
         return `📎 文件 "${fileName}" 超过 30MB 限制，无法处理。`;
       }
-      const base64 = buffer.toString('base64');
-      return [
-        { type: 'text', text: `用户发送了 PDF 文件 "${fileName}"：` } as Anthropic.TextBlockParam,
-        {
-          type: 'document',
-          source: { type: 'base64', media_type: 'application/pdf', data: base64 },
-        } as Anthropic.DocumentBlockParam,
-      ];
+      return `📎 用户发送了 PDF 文件 "${fileName}"（${(buffer.length / 1024).toFixed(1)}KB）。由于当前使用 OpenAI 兼容接口，暂不支持直接解析 PDF 内容。`;
     }
 
     // 文本文件直接读取内容
@@ -209,22 +185,16 @@ async function handleFileMessage(
  * 处理「读文件 xxx」指令：查找文件、下载、读取内容
  */
 async function handleReadFile(
-  userId: string,
-  chatId: string,
-  chatType: string,
-  messageId: string,
+  channel: LarkChannel,
+  msg: NormalizedMessage,
   fileName: string
 ): Promise<void> {
   const reply = async (text: string) => {
-    if (chatType === 'group' && messageId) {
-      await larkService.replyText(messageId, text);
-    } else {
-      await larkService.sendText(chatId, text);
-    }
+    await channel.send(msg.chatId, { text }, { replyTo: msg.messageId });
   };
 
   try {
-    const files = await larkService.listFiles();
+    const files = await larkService.listFiles(msg.chatId);
     const target = files.find((f) => f.name === fileName);
     if (!target) {
       await reply(`未找到文件「${fileName}」，请先发送「群文件」查看列表。`);
@@ -245,56 +215,82 @@ async function handleReadFile(
       await reply(`📎 文件「${fileName}」（${(buffer.length / 1024).toFixed(1)}KB），此文件类型暂不支持读取内容。`);
     }
   } catch (err) {
-    console.error(`[${userId}] handleReadFile failed:`, err);
+    console.error(`[${msg.senderId}] handleReadFile failed:`, err);
     await reply(`读取文件「${fileName}」时出错，请稍后重试。`);
   }
 }
 
 /**
- * 处理用户消息
+ * 处理用户消息（统一入口）
  */
 export async function handleMessage(
-  userId: string,
-  chatId: string,
-  query: string | Anthropic.ContentBlockParam[],
-  chatType: string = 'p2p',
-  messageId: string = ''
+  channel: LarkChannel,
+  msg: NormalizedMessage
 ): Promise<void> {
-  // 群聊：清理 @mention（仅文本消息）
-  if (chatType === 'group' && typeof query === 'string') {
-    query = stripAtMention(query);
+  const userId = msg.senderId;
+  const chatId = msg.chatId;
+  const chatType = msg.chatType;
+  const messageId = msg.messageId;
+
+  // 根据消息类型分发
+  const imageResource = msg.resources.find((r) => r.type === 'image');
+  const audioResource = msg.resources.find((r) => r.type === 'audio');
+  const videoResource = msg.resources.find((r) => r.type === 'video');
+  const fileResource = msg.resources.find((r) => r.type === 'file');
+
+  if (imageResource) {
+    await handleImageMessage(channel, msg, imageResource.fileKey);
+    return;
   }
-
-  if (!query || (Array.isArray(query) && query.length === 0)) return;
-
-  // 检测飞书文档链接，读取内容拼入消息（仅文本消息）
-  if (typeof query === 'string') {
-    const docLinks = extractFeishuDocLinks(query);
-    if (docLinks.length > 0) {
-      const docParts: string[] = [];
-      for (const link of docLinks) {
-        const content = await fetchDocLinkContent(link.type, link.token);
-        if (content) docParts.push(content);
-      }
-      if (docParts.length > 0) {
-        query = `${query}\n\n${docParts.join('\n\n')}`;
-      }
-    }
+  if (audioResource || videoResource) {
+    const media = audioResource || videoResource!;
+    await handleMediaMessage(channel, msg, media.fileName || 'media', media.fileKey);
+    return;
   }
-
-  // /clear 命令（仅文本消息）
-  if (typeof query === 'string' && query.trim() === '/clear') {
-    conversations.delete(userId);
-    if (chatType === 'group' && messageId) {
-      await larkService.replyText(messageId, '对话已清除 ✅');
+  if (fileResource) {
+    const fileName = fileResource.fileName || 'file';
+    const ext = getFileExtension(fileName);
+    if (getImportTargetType(ext)) {
+      await handleBinaryFile(channel, msg, fileName);
     } else {
-      await larkService.sendText(chatId, '对话已清除 ✅');
+      await handleFileEvent(channel, msg, fileName);
     }
     return;
   }
 
+  // 文本消息
+  let query = msg.content;
+  if (typeof query !== 'string') return;
+
+  // 群聊：清理 @mention
+  if (chatType === 'group') {
+    query = stripAtMention(query);
+  }
+
+  if (!query) return;
+
+  // 检测飞书文档链接，读取内容拼入消息
+  const docLinks = extractFeishuDocLinks(query);
+  if (docLinks.length > 0) {
+    const docParts: string[] = [];
+    for (const link of docLinks) {
+      const content = await fetchDocLinkContent(link.type, link.token);
+      if (content) docParts.push(content);
+    }
+    if (docParts.length > 0) {
+      query = `${query}\n\n${docParts.join('\n\n')}`;
+    }
+  }
+
+  // /clear 命令
+  if (query.trim() === '/clear') {
+    conversations.delete(userId);
+    await channel.send(chatId, { text: '对话已清除 ✅' }, { replyTo: messageId });
+    return;
+  }
+
   // 有待保存图片时，用 Claude 理解用户意图
-  if (typeof query === 'string' && pendingImages.has(userId)) {
+  if (pendingImages.has(userId)) {
     const pending = pendingImages.get(userId)!;
 
     // 用 Claude 理解用户意图
@@ -317,7 +313,7 @@ export async function handleMessage(
 - 只返回 JSON，不要其他内容`;
 
     try {
-      const intentResult = await streamClaude(
+      const intentResult = await streamAI(
         [{ role: 'user', content: intentPrompt }],
         () => {} // 不需要流式更新
       );
@@ -344,25 +340,16 @@ export async function handleMessage(
         const fileToken = await larkService.uploadFile(pending.buffer, fileName, folderToken);
         const url = `https://feishu.cn/file/${fileToken}`;
 
-        const msg = `🖼️ 图片已保存\n文件夹：${folder}/${today}\n文件：${fileName}\n${url}`;
+        const replyMsg = `🖼️ 图片已保存\n文件夹：${folder}/${today}\n文件：${fileName}\n${url}`;
         pendingImages.delete(userId);
-        if (chatType === 'group' && messageId) {
-          await larkService.replyText(messageId, msg);
-        } else {
-          await larkService.sendText(chatId, msg);
-        }
+        await channel.send(chatId, { text: replyMsg }, { replyTo: messageId });
       } else if (intent.action === 'discard') {
         pendingImages.delete(userId);
-        const msg = '已丢弃图片。';
-        if (chatType === 'group' && messageId) {
-          await larkService.replyText(messageId, msg);
-        } else {
-          await larkService.sendText(chatId, msg);
-        }
+        await channel.send(chatId, { text: '已丢弃图片。' }, { replyTo: messageId });
       } else {
         // action === 'chat'，正常对话
         pendingImages.delete(userId);
-        await handleMessage(userId, chatId, query, chatType, messageId);
+        await handleMessage(channel, msg);
       }
     } catch (err) {
       console.error('意图解析失败:', err);
@@ -373,47 +360,35 @@ export async function handleMessage(
         const fileName = sanitizeFileName(`image_${Date.now()}.jpg`);
         const fileToken = await larkService.uploadFile(pending.buffer, fileName, folderToken);
         const url = `https://feishu.cn/file/${fileToken}`;
-        const msg = `🖼️ 图片已保存\n文件夹：未整理/${today}\n文件：${fileName}\n${url}`;
+        const replyMsg = `🖼️ 图片已保存\n文件夹：未整理/${today}\n文件：${fileName}\n${url}`;
         pendingImages.delete(userId);
-        if (chatType === 'group' && messageId) {
-          await larkService.replyText(messageId, msg);
-        } else {
-          await larkService.sendText(chatId, msg);
-        }
+        await channel.send(chatId, { text: replyMsg }, { replyTo: messageId });
       } else {
         pendingImages.delete(userId);
-        await handleMessage(userId, chatId, query, chatType, messageId);
+        await handleMessage(channel, msg);
       }
     }
     return;
   }
 
-  // 群文件指令（仅文本消息）
-  if (typeof query === 'string' && query.trim() === '群文件') {
-    const files = await larkService.listFiles();
+  // 群文件指令
+  if (query.trim() === '群文件') {
+    const files = await larkService.listFiles(chatId);
     const text = formatFileList(files);
-    if (chatType === 'group' && messageId) {
-      await larkService.replyText(messageId, text);
-    } else {
-      await larkService.sendText(chatId, text);
-    }
+    await channel.send(chatId, { text }, { replyTo: messageId });
     return;
   }
 
-  // 读文件指令（仅文本消息）
-  const fileName = typeof query === 'string' ? parseFileCommand(query) : null;
+  // 读文件指令
+  const fileName = parseFileCommand(query);
   if (fileName) {
-    await handleReadFile(userId, chatId, chatType, messageId, fileName);
+    await handleReadFile(channel, msg, fileName);
     return;
   }
 
   // 并发检查
   if (running.get(userId)) {
-    if (chatType === 'group' && messageId) {
-      await larkService.replyText(messageId, '上一条回复还在生成中，请稍候...');
-    } else {
-      await larkService.sendText(chatId, '上一条回复还在生成中，请稍候...');
-    }
+    await channel.send(chatId, { text: '上一条回复还在生成中，请稍候...' }, { replyTo: messageId });
     return;
   }
 
@@ -439,32 +414,21 @@ export async function handleMessage(
   running.set(userId, true);
 
   try {
-    // 发送占位卡片
-    let replyMessageId: string;
-    if (chatType === 'group' && messageId) {
-      console.log(`[${userId}] 发送回复卡片...`);
-      replyMessageId = await larkService.replyCard(messageId, '思考中...');
-    } else {
-      console.log(`[${userId}] 发送卡片...`);
-      replyMessageId = await larkService.sendCard(chatId, '思考中...');
-    }
-    console.log(`[${userId}] 卡片已发送: ${replyMessageId}`);
-
-    // 调 Claude，流式更新卡片
-    console.log(`[${userId}] 调用 Claude API...`);
-    const fullText = await streamClaude(
-      history,
-      (text) => throttledUpdate(replyMessageId, text),
-      ctx
-    );
-    console.log(`[${userId}] Claude 回复完成，长度: ${fullText.length}`);
-
-    // 最终更新：确保完整内容写入卡片（绕过节流）
-    try {
-      await larkService.updateCard(replyMessageId, fullText);
-    } catch (err: any) {
-      if (err?.data?.code !== 230020) throw err;
-    }
+    // 流式输出
+    console.log(`[${userId}] 调用 AI API...`);
+    let fullText = '';
+    await channel.stream(chatId, {
+      markdown: async (s) => {
+        let lastText = '';
+        fullText = await streamAI(history, (text) => {
+          if (text !== lastText) {
+            s.setContent(text);
+            lastText = text;
+          }
+        }, ctx);
+      },
+    }, { replyTo: messageId });
+    console.log(`[${userId}] AI 回复完成，长度: ${fullText.length}`);
 
     // 保存 assistant 回复
     history.push({ role: 'assistant', content: fullText });
@@ -472,11 +436,7 @@ export async function handleMessage(
     console.error(`[${userId}] 错误:`, err);
     const errMsg = `出错了: ${err instanceof Error ? err.message : String(err)}`;
     try {
-      if (chatType === 'group' && messageId) {
-        await larkService.replyText(messageId, errMsg);
-      } else {
-        await larkService.sendText(chatId, errMsg);
-      }
+      await channel.send(chatId, { text: errMsg }, { replyTo: messageId });
     } catch (sendErr) {
       console.error(`[${userId}] 发送错误消息也失败:`, sendErr);
     }
@@ -488,51 +448,46 @@ export async function handleMessage(
 /**
  * 处理音视频消息：下载文件 → 上传飞书云盘 → 回复链接
  */
-export async function handleMediaMessage(
-  userId: string,
-  chatId: string,
-  chatType: string,
-  messageId: string,
+async function handleMediaMessage(
+  channel: LarkChannel,
+  msg: NormalizedMessage,
   fileName: string,
   fileKey: string
 ): Promise<void> {
+  const userId = msg.senderId;
   console.log(`[${userId}] 收到音视频: ${fileName}`);
 
   // 回复处理中
-  const replyMsg = chatType === 'group' && messageId
-    ? await larkService.replyCard(messageId, '正在保存音视频到云盘...')
-    : await larkService.sendCard(chatId, '正在保存音视频到云盘...');
+  await channel.send(msg.chatId, { text: '正在保存音视频到云盘...' }, { replyTo: msg.messageId });
 
   try {
     // 下载文件
-    const buffer = await larkService.getResource(messageId, fileKey, 'file');
+    const buffer = await larkService.getResource(msg.messageId, fileKey, 'file');
     if (!buffer) {
-      await larkService.updateCard(replyMsg, '文件下载失败');
+      await channel.send(msg.chatId, { text: '文件下载失败' }, { replyTo: msg.messageId });
       return;
     }
 
     // 上传到飞书云盘
-    const folderToken = config.driveFolderToken;
-    if (!folderToken) {
-      await larkService.updateCard(replyMsg, '未配置云盘文件夹，请设置 DRIVE_FOLDER_TOKEN 环境变量');
+    if (!rootFolderToken) {
+      await channel.send(msg.chatId, { text: '未配置云盘文件夹，请设置 DRIVE_FOLDER_TOKEN 环境变量' }, { replyTo: msg.messageId });
       return;
     }
 
     const safeName = sanitizeFileName(fileName);
-    const fileToken = await larkService.uploadFile(buffer, safeName, folderToken);
+    const fileToken = await larkService.uploadFile(buffer, safeName, rootFolderToken);
 
     const link = `${config.lark.domain}/file/${fileToken}`;
-    await larkService.updateCard(
-      replyMsg,
-      `音视频已保存到云盘\n\n文件名：${safeName}\n[打开文件](${link})`
-    );
+    await channel.send(msg.chatId, {
+      text: `音视频已保存到云盘\n\n文件名：${safeName}\n[打开文件](${link})`,
+    }, { replyTo: msg.messageId });
   } catch (err) {
     console.error(`[${userId}] 音视频保存失败:`, err);
     const errMsg = `保存失败: ${err instanceof Error ? err.message : String(err)}`;
     try {
-      await larkService.updateCard(replyMsg, errMsg);
-    } catch (updateErr) {
-      console.error(`[${userId}] 更新错误卡片失败:`, updateErr);
+      await channel.send(msg.chatId, { text: errMsg }, { replyTo: msg.messageId });
+    } catch (sendErr) {
+      console.error(`[${userId}] 发送错误消息失败:`, sendErr);
     }
   }
 }
@@ -540,55 +495,46 @@ export async function handleMediaMessage(
 /**
  * 处理文件消息（从 app.ts 调用）
  */
-export async function handleFileEvent(
-  userId: string,
-  chatId: string,
-  chatType: string,
-  messageId: string,
+async function handleFileEvent(
+  channel: LarkChannel,
+  msg: NormalizedMessage,
   fileName: string
 ): Promise<void> {
+  const userId = msg.senderId;
   console.log(`[${userId}] 收到文件: ${fileName}`);
 
-  const fileContext = await handleFileMessage(messageId, fileName);
+  const fileContext = await handleFileMessage(msg.messageId, fileName);
   const query = fileContext || `用户发送了文件 "${fileName}"，但无法读取内容。`;
 
   // 把文件信息当作用户消息传给 Claude
-  await handleMessage(userId, chatId, query, chatType, messageId);
+  await handleMessage(channel, { ...msg, content: query, resources: [] });
 }
 
 /**
  * 处理图片消息：下载图片，转 base64 传给 Claude
  */
-export async function handleImageMessage(
-  userId: string,
-  chatId: string,
-  chatType: string,
-  messageId: string,
+async function handleImageMessage(
+  channel: LarkChannel,
+  msg: NormalizedMessage,
   imageKey: string
 ): Promise<void> {
+  const userId = msg.senderId;
+  const chatId = msg.chatId;
   console.log(`[${userId}] 开始处理图片: ${imageKey}`);
 
   // 检查是否已初始化云盘文件夹
   if (!rootFolderToken) {
-    const msg = '⚠️ 云盘文件夹未初始化，无法保存图片。\n请稍后再试或联系管理员。';
-    if (chatType === 'group' && messageId) {
-      await larkService.replyText(messageId, msg);
-    } else {
-      await larkService.sendText(chatId, msg);
-    }
+    await channel.send(chatId, {
+      text: '⚠️ 云盘文件夹未初始化，无法保存图片。\n请稍后再试或联系管理员。',
+    }, { replyTo: msg.messageId });
     return;
   }
 
   try {
     console.log(`[${userId}] 下载图片中...`);
-    const buffer = await larkService.getResource(messageId, imageKey, 'image');
+    const buffer = await larkService.getResource(msg.messageId, imageKey, 'image');
     if (!buffer) {
-      const fallback = '图片下载失败，请重新发送。';
-      if (chatType === 'group' && messageId) {
-        await larkService.replyText(messageId, fallback);
-      } else {
-        await larkService.sendText(chatId, fallback);
-      }
+      await channel.send(chatId, { text: '图片下载失败，请重新发送。' }, { replyTo: msg.messageId });
       return;
     }
 
@@ -601,21 +547,12 @@ export async function handleImageMessage(
     const fileToken = await larkService.uploadFile(buffer, fileName, folderToken);
     const url = `https://feishu.cn/file/${fileToken}`;
 
-    const msg = `🖼️ 图片已保存\n文件夹：机器人文件/图片/${today}\n文件：${fileName}\n大小：${(buffer.length / 1024).toFixed(1)}KB\n${url}`;
-    if (chatType === 'group' && messageId) {
-      await larkService.replyText(messageId, msg);
-    } else {
-      await larkService.sendText(chatId, msg);
-    }
+    const replyMsg = `🖼️ 图片已保存\n文件夹：智能体文件/图片/${today}\n文件：${fileName}\n大小：${(buffer.length / 1024).toFixed(1)}KB\n${url}`;
+    await channel.send(chatId, { text: replyMsg }, { replyTo: msg.messageId });
   } catch (err) {
     console.error(`[${userId}] handleImageMessage failed:`, err);
-    const errMsg = '图片处理出错，请重新发送。';
     try {
-      if (chatType === 'group' && messageId) {
-        await larkService.replyText(messageId, errMsg);
-      } else {
-        await larkService.sendText(chatId, errMsg);
-      }
+      await channel.send(chatId, { text: '图片处理出错，请重新发送。' }, { replyTo: msg.messageId });
     } catch (sendErr) {
       console.error(`[${userId}] 发送错误消息也失败:`, sendErr);
     }
@@ -625,52 +562,48 @@ export async function handleImageMessage(
 /**
  * 处理二进制文件（xlsx/docx 等）：通过飞书导入 API 转换后读取内容
  */
-export async function handleBinaryFile(
-  userId: string,
-  chatId: string,
-  chatType: string,
-  messageId: string,
+async function handleBinaryFile(
+  channel: LarkChannel,
+  msg: NormalizedMessage,
   fileName: string
 ): Promise<void> {
+  const userId = msg.senderId;
+  const chatId = msg.chatId;
   console.log(`[${userId}] 收到二进制文件: ${fileName}`);
 
   const ext = getFileExtension(fileName);
   const targetType = getImportTargetType(ext);
   if (!targetType) {
-    await handleFileEvent(userId, chatId, chatType, messageId, fileName);
+    await handleFileEvent(channel, msg, fileName);
     return;
   }
 
-  const folderToken = config.driveFolderToken;
-  if (!folderToken) {
-    const msg = '未配置 DRIVE_FOLDER_TOKEN，无法导入文件。请在 .env 中设置。';
-    if (chatType === 'group' && messageId) {
-      await larkService.replyText(messageId, msg);
-    } else {
-      await larkService.sendText(chatId, msg);
-    }
+  if (!rootFolderToken) {
+    await channel.send(chatId, {
+      text: '未配置 DRIVE_FOLDER_TOKEN，无法导入文件。请在 .env 中设置。',
+    }, { replyTo: msg.messageId });
     return;
   }
 
   try {
     // 1. 下载文件
-    const msg = await larkService.getMessage(messageId);
-    if (!msg?.items?.[0]?.content) throw new Error('无法获取文件信息');
-    const content = JSON.parse(msg.items[0].content);
+    const messageData = await larkService.getMessage(msg.messageId);
+    if (!messageData?.items?.[0]?.content) throw new Error('无法获取文件信息');
+    const content = JSON.parse(messageData.items[0].content);
     const fileKey = content.file_key;
     if (!fileKey) throw new Error('无法获取 file_key');
 
-    const buffer = await larkService.getResource(messageId, fileKey, 'file');
+    const buffer = await larkService.getResource(msg.messageId, fileKey, 'file');
     if (!buffer) throw new Error('下载文件失败');
 
     // 2. 上传到云盘
     const cleanName = sanitizeFileName(fileName);
     console.log(`[${userId}] 上传文件到云盘: ${cleanName}`);
-    const fileToken = await larkService.uploadFile(buffer, cleanName, folderToken);
+    const fileToken = await larkService.uploadFile(buffer, cleanName, rootFolderToken);
 
     // 3. 创建导入任务
     console.log(`[${userId}] 创建导入任务: ${ext} → ${targetType}`);
-    const ticket = await larkService.createImportTask(fileToken, ext, targetType, cleanName, folderToken);
+    const ticket = await larkService.createImportTask(fileToken, ext, targetType, cleanName, rootFolderToken);
 
     // 4. 轮询结果（最多 30 秒，每 2 秒一次）
     let importResult: { token: string; type: string } | null = null;
@@ -686,7 +619,7 @@ export async function handleBinaryFile(
     if (importResult.type === 'sheet') {
       const values = await larkService.getSheetValues(importResult.token, 'Sheet1!A1:Z200');
       if (values) {
-        fileContent = values.map(row => row.join('\t')).join('\n');
+        fileContent = values.map((row: any[]) => row.join('\t')).join('\n');
       }
     } else {
       const text = await larkService.getDocContent(importResult.token);
@@ -699,14 +632,10 @@ export async function handleBinaryFile(
       fileContent = `📎 文件 "${fileName}" 内容：\n\`\`\`\n${fileContent.slice(0, 10000)}\n\`\`\``;
     }
 
-    await handleMessage(userId, chatId, fileContent, chatType, messageId);
+    await handleMessage(channel, { ...msg, content: fileContent, resources: [] });
   } catch (err) {
     console.error(`[${userId}] handleBinaryFile failed:`, err);
     const errMsg = `处理文件 "${fileName}" 失败: ${err instanceof Error ? err.message : String(err)}`;
-    if (chatType === 'group' && messageId) {
-      await larkService.replyText(messageId, errMsg);
-    } else {
-      await larkService.sendText(chatId, errMsg);
-    }
+    await channel.send(chatId, { text: errMsg }, { replyTo: msg.messageId });
   }
 }

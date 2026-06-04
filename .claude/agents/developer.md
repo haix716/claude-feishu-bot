@@ -23,7 +23,8 @@ permissionMode: acceptEdits
 3. 改完代码后必须验证：
    - `npm run build` 成功
    - `npx eslint src/` 0 error
-4. Commit 格式：`<type>(<scope>): <description>`（英文，小写开头，72字符内）
+   - `npm test` 全部通过
+4. **必须 git commit**，格式：`<type>(<scope>): <description>`
 5. 不要把 API key、token、密钥写进代码
 6. 遇到问题先读源码/文档，不要猜
 
@@ -32,6 +33,14 @@ permissionMode: acceptEdits
 1. 读取 Task Brief 中指定的当前代码
 2. 理解现有架构和接口
 3. 执行改动
-4. 编译 + lint 验证
-5. Commit 改动
-6. 输出完成报告（改了什么、验证结果）
+4. 编译 + lint + 测试验证
+5. **必须 git commit**
+6. 输出完成报告（改了什么、验证结果、commit hash）
+
+## 验收标准（必须全部满足）
+
+- [ ] `npm run build` 成功
+- [ ] `npx eslint src/` 0 error
+- [ ] `npm test` 全部通过
+- [ ] 已 git commit
+- [ ] commit message 符合规范

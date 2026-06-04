@@ -559,7 +559,7 @@ async function handleImageMessage(
     // 3. 保存到本地文件夹
     const today = getTodayDate();
     const dateFolder = today.replace(/-/g, '');
-    const localDir = path.join('/Users/hxy/Documents/小红书店铺', dateFolder);
+    const localDir = path.join(config.imageSaveDir, dateFolder);
 
     // 创建目录
     if (!fs.existsSync(localDir)) {

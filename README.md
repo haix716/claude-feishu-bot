@@ -94,8 +94,13 @@ src/
 ├── ai.ts         # AI API 封装（OpenAI SDK，流式 + 图片理解）
 ├── lark.ts       # 飞书文件/文档操作封装（Client）
 ├── handler.ts    # 消息处理主逻辑（路由 + 对话 + 文件处理）
+├── rag.ts        # RAG 搜索模块（本地图片索引 + 文本匹配）
 ├── util.ts       # 工具函数（正则、文件解析）
 └── tools/        # 工具调用（GetTimeTool、SearchDocTool）
+
+scripts/
+├── security-check.sh  # 敏感信息检测（push 前自动运行）
+└── lint-check.sh      # 代码规范检查
 ```
 
 ## 架构设计 / Architecture

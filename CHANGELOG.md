@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.3.1] - 2026-06-04
+
+### Added
+- **安全检查脚本**：push 前自动扫描敏感信息（本地路径、API key、媒体文件）
+- **PreToolUse hook**：git push 前自动运行安全检查
+- **gitignore 更新**：添加 images/ 和 src/data/index.json
+
+### Fixed
+- **git 历史清理**：删除误提交的 images/20260604 文件夹
+
 ## [2.3.0] - 2026-06-04
 
 ### Added

@@ -89,6 +89,23 @@ function getTodayDate(): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 }
 
+/** 检查并创建待办 */
+async function createTodoIfNeeded(userId: string, date: string): Promise<void> {
+  const key = `${userId}:${date}`;
+  if (userTodoRecords.has(key)) {
+    return; // 今天已创建待办
+  }
+
+  const title = `处理 ${date} 的待处理图片`;
+  const description = `图片已自动保存到 ${date.replace(/-/g, '')}(待处理) 文件夹`;
+
+  const todoId = await larkService.createTodo(userId, title, description);
+  if (todoId) {
+    userTodoRecords.set(key, todoId);
+    console.log(`已为用户 ${userId} 创建待办: ${title}`);
+  }
+}
+
 /**
  * 用正则匹配用户对图片的意图（不需要调大模型）
  */

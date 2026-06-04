@@ -1,4 +1,5 @@
 import { Client } from '@larksuiteoapi/node-sdk';
+import axios from 'axios';
 import { config } from './config';
 import { FileItem } from './util';
 
@@ -70,32 +71,42 @@ class LarkService {
     fileKey: string,
     type: 'file' | 'image' = 'file'
   ): Promise<Buffer | null> {
+    console.log(`[getResource] 开始下载: messageId=${messageId}, fileKey=${fileKey}, type=${type}`);
     try {
-      const resp = await this.client.im.messageResource.get({
-        path: { message_id: messageId, file_key: fileKey },
+      // 获取 tenant_access_token
+      const tokenResp = await axios.post(
+        `${config.lark.domain}/open-apis/auth/v3/tenant_access_token/internal`,
+        {
+          app_id: config.lark.appId,
+          app_secret: config.lark.appSecret,
+        }
+      );
+      const accessToken = tokenResp.data.tenant_access_token;
+
+      // 使用 axios 直接调用飞书 API
+      const url = `${config.lark.domain}/open-apis/im/v1/messages/${messageId}/resources/${fileKey}`;
+      const resp = await axios.get(url, {
         params: { type },
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+        responseType: 'arraybuffer',
+        validateStatus: (status) => true, // 不抛出异常
       });
 
-      // SDK 返回的是一个对象，包含 getReadableStream 方法
-      if (resp && typeof resp === 'object' && 'getReadableStream' in resp) {
-        const stream = (resp as any).getReadableStream();
-        const chunks: Buffer[] = [];
-        for await (const chunk of stream) {
-          chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
-        }
-        return Buffer.concat(chunks);
+      console.log(`[getResource] 响应状态: ${resp.status}, 大小: ${resp.data?.length || 0} bytes`);
+
+      if (resp.status === 200 && resp.data) {
+        return Buffer.from(resp.data);
       }
 
-      // 兼容旧版 SDK：直接是 pipe 方法
-      if (resp && typeof resp === 'object' && 'pipe' in resp) {
-        const chunks: Buffer[] = [];
-        for await (const chunk of resp as any) {
-          chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
-        }
-        return Buffer.concat(chunks);
+      // 打印详细错误信息
+      if (resp.status !== 200) {
+        const errorData = Buffer.from(resp.data).toString('utf-8');
+        console.error(`[getResource] 下载失败: status=${resp.status}, response=${errorData}`);
       }
     } catch (err) {
-      console.error('getResource failed:', err);
+      console.error('[getResource] 下载失败:', err);
     }
     return null;
   }
@@ -447,6 +458,72 @@ class LarkService {
       console.error('downloadFile failed:', err);
     }
     return null;
+  }
+
+  /** 使用用户身份上传文件到飞书云盘 */
+  async uploadFileWithUserToken(
+    userAccessToken: string,
+    buffer: Buffer,
+    fileName: string,
+    parentToken: string
+  ): Promise<string> {
+    const formData = new FormData();
+    formData.append('file_name', fileName);
+    formData.append('parent_type', 'explorer');
+    formData.append('parent_node', parentToken);
+    formData.append('size', buffer.length.toString());
+    formData.append('file', new Blob([new Uint8Array(buffer)]), fileName);
+
+    console.log(`[upload] 上传文件: ${fileName}, 大小: ${buffer.length}, 目标文件夹: ${parentToken}`);
+
+    const resp = await axios.post(
+      `${config.lark.domain}/open-apis/drive/v1/files/upload_all`,
+      formData,
+      {
+        headers: {
+          Authorization: `Bearer ${userAccessToken}`,
+        },
+      }
+    );
+
+    console.log(`[upload] 响应:`, JSON.stringify(resp.data));
+
+    if (resp.data.code !== 0) {
+      throw new Error(`uploadFile failed: code=${resp.data.code}, msg=${resp.data.msg}`);
+    }
+    return resp.data.data?.file_token || '';
+  }
+
+  /** 使用用户身份创建文件夹 */
+  async createFolderWithUserToken(
+    userAccessToken: string,
+    name: string,
+    parentToken?: string
+  ): Promise<string> {
+    const data = {
+      name,
+      folder_token: parentToken || '', // 必填，空字符串表示根目录
+    };
+
+    console.log(`[folder] 创建文件夹: ${name}, 父文件夹: ${parentToken || '根目录'}`);
+
+    const resp = await axios.post(
+      `${config.lark.domain}/open-apis/drive/v1/files/create_folder`,
+      data,
+      {
+        headers: {
+          Authorization: `Bearer ${userAccessToken}`,
+          'Content-Type': 'application/json; charset=utf-8',
+        },
+      }
+    );
+
+    console.log(`[folder] 响应:`, JSON.stringify(resp.data));
+
+    if (resp.data.code !== 0) {
+      throw new Error(`createFolder failed: code=${resp.data.code}, msg=${resp.data.msg}`);
+    }
+    return resp.data.data?.token || '';
   }
 }
 

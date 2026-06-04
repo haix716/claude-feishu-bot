@@ -2,8 +2,12 @@ import { createLarkChannel, LoggerLevel } from '@larksuiteoapi/node-sdk';
 import { config } from './config';
 import { handleMessage, initRootFolder } from './handler';
 import { startScheduler } from './scheduler';
+import { startOAuthServer } from './oauth-server';
 
 async function main() {
+    // 启动 OAuth 服务器
+    await startOAuthServer(3000);
+
     // 初始化云盘文件夹（保留原有逻辑）
     await initRootFolder();
 

@@ -4,6 +4,8 @@ import { config } from './config';
 import { validateFileSize, sanitizeFileName, getFileExtension, getImportTargetType, extractFeishuDocLinks, formatFileList, parseFileCommand } from './util';
 import { ToolManager, GetTimeTool, SearchDocTool } from './tools';
 import type { LarkChannel, NormalizedMessage } from '@larksuiteoapi/node-sdk';
+import fs from 'fs';
+import path from 'path';
 
 // 初始化工具管理器
 const toolManager = new ToolManager();
@@ -24,9 +26,6 @@ const folderCache = new Map<string, string>();
 
 /** 根文件夹 token（启动时自动获取） */
 let rootFolderToken = '';
-
-/** 图片序号计数器（每天重置） */
-let imageSequenceCounter = 1;
 
 /** 用户待办记录：key = "userId:date", value = 是否已创建待办 */
 const userTodoRecords = new Map<string, string>(); // 存储 todo_id
@@ -509,7 +508,7 @@ async function handleFileEvent(
 }
 
 /**
- * 处理图片消息：下载图片，转 base64 传给 AI
+ * 处理图片消息：下载图片，分析内容，保存到本地
  */
 async function handleImageMessage(
   channel: LarkChannel,
@@ -520,65 +519,98 @@ async function handleImageMessage(
   const chatId = msg.chatId;
   console.log(`[${userId}] 开始处理图片: ${imageKey}`);
 
-  // 检查是否已初始化云盘文件夹
-  if (!rootFolderToken) {
-    await channel.send(chatId, {
-      text: '⚠️ 云盘文件夹未初始化，无法保存图片。\n请稍后再试或联系管理员。',
-    }, { replyTo: msg.messageId });
-    return;
-  }
-
   try {
     // 1. 下载图片
     console.log(`[${userId}] 下载图片中...`);
-    const buffer = await larkService.getResource(msg.messageId, imageKey, 'image');
+    let buffer: Buffer | null;
+    try {
+      buffer = await larkService.getResource(msg.messageId, imageKey, 'image');
+    } catch (downloadErr) {
+      const errMsg = downloadErr instanceof Error ? downloadErr.message : String(downloadErr);
+      console.error(`[${userId}] 图片下载异常:`, errMsg);
+      await channel.send(chatId, {
+        text: `❌ 图片下载失败\n原因：${errMsg}\n请检查网络连接或重新发送。`,
+      }, { replyTo: msg.messageId });
+      return;
+    }
     if (!buffer) {
-      await channel.send(chatId, { text: '图片下载失败，请重新发送。' }, { replyTo: msg.messageId });
+      await channel.send(chatId, {
+        text: '❌ 图片下载失败\n原因：返回数据为空\n请重新发送图片。',
+      }, { replyTo: msg.messageId });
       return;
     }
     console.log(`[${userId}] 图片下载完成，大小: ${buffer.length} bytes`);
 
     // 2. 分析图片内容
     let imageDescription = '图片';
+    let imageFileName = '图片';
+    let analyzeError = '';
     try {
       const base64Image = buffer.toString('base64');
-      imageDescription = await analyzeImage(base64Image);
+      const result = await analyzeImage(base64Image);
+      imageDescription = result.description;
+      imageFileName = result.fileName;
       console.log(`[${userId}] 图片识别完成: ${imageDescription}`);
     } catch (analyzeErr) {
-      console.warn(`[${userId}] 图片识别失败:`, analyzeErr);
+      analyzeError = analyzeErr instanceof Error ? analyzeErr.message : String(analyzeErr);
+      console.warn(`[${userId}] 图片识别失败:`, analyzeError);
     }
 
-    // 3. 创建/使用今天的文件夹：{yyyyMMdd}(待处理)
-    const today = getTodayDate(); // 格式：2026-06-04
-    const folderName = `${today.replace(/-/g, '')}(待处理)`; // 格式：20260604(待处理)
-    const folderToken = await getOrCreateFolder(folderName);
+    // 3. 保存到本地文件夹
+    const today = getTodayDate();
+    const dateFolder = today.replace(/-/g, '');
+    const localDir = path.join('/Users/hxy/Documents/小红书店铺', dateFolder);
 
-    // 4. 生成文件名：{YYYYMMddHHmmss}_{序号}_{内容摘要}.{ext}
+    // 创建目录
+    if (!fs.existsSync(localDir)) {
+      fs.mkdirSync(localDir, { recursive: true });
+    }
+
+    // 4. 生成文件名
     const now = new Date();
     const timestamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-    const sequence = String(imageSequenceCounter++).padStart(2, '0');
-    const contentSummary = sanitizeFileName(imageDescription.substring(0, 12));
-    const fileName = `${timestamp}_${sequence}_${contentSummary}.jpg`;
+    const contentSummary = sanitizeFileName(imageFileName);
+    const fileName = `${timestamp}_${contentSummary}.jpg`;
+    const filePath = path.join(localDir, fileName);
 
-    // 5. 上传图片
-    const fileToken = await larkService.uploadFile(buffer, fileName, folderToken);
-    const url = `https://feishu.cn/file/${fileToken}`;
+    // 5. 保存到本地
+    try {
+      fs.writeFileSync(filePath, buffer);
+      console.log(`[${userId}] 图片已保存到本地: ${filePath}`);
+    } catch (saveErr) {
+      const errMsg = saveErr instanceof Error ? saveErr.message : String(saveErr);
+      console.error(`[${userId}] 保存图片失败:`, errMsg);
+      await channel.send(chatId, {
+        text: `❌ 图片保存失败\n文件：${fileName}\n原因：${errMsg}`,
+      }, { replyTo: msg.messageId });
+      return;
+    }
 
     // 6. 检查用户今天是否有待办，没有则创建
-    await createTodoIfNeeded(userId, today);
+    try {
+      await createTodoIfNeeded(userId, today);
+    } catch (todoErr) {
+      console.warn(`[${userId}] 创建待办失败:`, todoErr);
+      // 待办创建失败不影响主流程
+    }
 
     // 7. 回复用户
-    const replyMsg = [
+    const replyLines = [
       `✅ 图片已保存`,
-      `📝 内容：${imageDescription}`,
-      `📁 位置：${folderName}/${fileName}`,
-      `🔗 链接：${url}`,
-    ].join('\n');
-    await channel.send(chatId, { text: replyMsg }, { replyTo: msg.messageId });
+      `📝 内容：${imageDescription || '未识别'}`,
+      `📁 位置：小红书店铺/${dateFolder}/${fileName}`,
+    ];
+    if (analyzeError) {
+      replyLines.push(`\n⚠️ 图片识别失败：${analyzeError}`);
+    }
+    await channel.send(chatId, { text: replyLines.join('\n') }, { replyTo: msg.messageId });
   } catch (err) {
-    console.error(`[${userId}] handleImageMessage failed:`, err);
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.error(`[${userId}] handleImageMessage 未知错误:`, errMsg);
     try {
-      await channel.send(chatId, { text: '图片处理出错，请重新发送。' }, { replyTo: msg.messageId });
+      await channel.send(chatId, {
+        text: `❌ 图片处理出错\n错误类型：未知\n详细信息：${errMsg}\n请重新发送或联系管理员。`,
+      }, { replyTo: msg.messageId });
     } catch (sendErr) {
       console.error(`[${userId}] 发送错误消息也失败:`, sendErr);
     }

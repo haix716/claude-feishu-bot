@@ -36,10 +36,20 @@ src/
 ├── ai.ts         # AI API 封装（OpenAI SDK，流式 + 图片理解）
 ├── lark.ts       # 飞书文件/文档操作封装（Client）
 ├── handler.ts    # 消息处理主逻辑（路由 + 对话管理）
-└── util.ts       # 工具函数（正则、文件解析）
+├── util.ts       # 工具函数（正则、文件解析）
+└── tools/        # 工具调用（GetTimeTool、SearchDocTool）
 ```
 
 核心流程：`用户消息 → Channel SDK → handler → AI stream → channel.stream() 流式更新`
+
+## 图片处理功能
+
+用户发送图片时，智能体会：
+1. 下载图片
+2. 使用 MiMo 模型分析图片内容
+3. 保存到本地文件夹：`/Users/hxy/Documents/小红书店铺/{日期}/`
+4. 文件名格式：`{YYYYMMddHHmmss}_{内容摘要}.jpg`
+5. 回复用户图片内容和保存位置
 
 ## 环境变量
 

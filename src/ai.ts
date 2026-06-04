@@ -155,20 +155,48 @@ export async function streamAIWithTools(
   return finalContent;
 }
 
-export async function analyzeImage(base64Image: string): Promise<string> {
+export async function analyzeImage(base64Image: string): Promise<{ description: string; fileName: string }> {
   const response = await openai.chat.completions.create({
     model: config.mimoImageModel,
     messages: [{
       role: 'user',
       content: [
-        { type: 'text', text: '请用中文描述这张图片的内容，100字以内。' },
+        {
+          type: 'text',
+          text: `请分析这张图片，返回两行内容：
+1. 描述：用中文描述图片内容，100字以内
+2. 文件名：用中文生成一个简短的文件名，12个字以内，不要包含特殊字符和空格
+
+示例格式：
+描述：这是一张风景照，展示了山间的日出美景
+文件名：山间日出风景照`
+        },
         {
           type: 'image_url',
           image_url: { url: `data:image/jpeg;base64,${base64Image}` },
         },
       ],
     }],
-    max_tokens: 300,
+    max_completion_tokens: 300,
   });
-  return response.choices[0]?.message?.content || '';
+
+  const content = response.choices[0]?.message?.content || '';
+  const lines = content.split('\n').filter(line => line.trim());
+
+  let description = '';
+  let fileName = '';
+
+  for (const line of lines) {
+    if (line.startsWith('描述：') || line.startsWith('描述:')) {
+      description = line.replace(/^描述[：:]\s*/, '').trim();
+    } else if (line.startsWith('文件名：') || line.startsWith('文件名:')) {
+      fileName = line.replace(/^文件名[：:]\s*/, '').trim();
+    }
+  }
+
+  // 如果解析失败，使用默认值
+  if (!description) description = content.substring(0, 100);
+  if (!fileName) fileName = '图片';
+
+  return { description, fileName };
 }

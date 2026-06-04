@@ -303,6 +303,133 @@ class LarkService {
     }
   }
 
+  /** 列出文件夹下的子文件夹 */
+  async listFolders(parentToken: string): Promise<Array<{ token: string; name: string }>> {
+    try {
+      const resp = await (this.client as any).drive.v1.file.listByFolder({
+        params: {
+          folder_token: parentToken,
+          page_size: 200,
+        },
+      });
+      if (resp.code !== 0) {
+        console.error(`listFolders failed: ${resp.msg}`);
+        return [];
+      }
+      const files = resp.data?.files || [];
+      return files
+        .filter((f: any) => f.type === 'folder')
+        .map((f: any) => ({ token: f.token, name: f.name }));
+    } catch (err) {
+      console.error('listFolders failed:', err);
+      return [];
+    }
+  }
+
+  /** 列出文件夹下的所有文件（用于判断是否为空） */
+  async listFolderContents(folderToken: string): Promise<number> {
+    try {
+      const resp = await (this.client as any).drive.v1.file.listByFolder({
+        params: {
+          folder_token: folderToken,
+          page_size: 1,
+        },
+      });
+      if (resp.code !== 0) {
+        console.error(`listFolderContents failed: ${resp.msg}`);
+        return -1;
+      }
+      return (resp.data?.files || []).length;
+    } catch (err) {
+      console.error('listFolderContents failed:', err);
+      return -1;
+    }
+  }
+
+  /** 删除云盘文件/文件夹 */
+  async deleteFile(fileToken: string, fileType: string = 'folder'): Promise<boolean> {
+    try {
+      const resp = await (this.client as any).drive.v1.file.delete({
+        path: { file_token: fileToken },
+        params: { type: fileType },
+      });
+      if (resp.code !== 0) {
+        console.error(`deleteFile failed: ${resp.msg}`);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.error('deleteFile failed:', err);
+      return false;
+    }
+  }
+
+  /** 创建待办，返回 task_id */
+  async createTodo(userId: string, title: string, description?: string): Promise<string | null> {
+    try {
+      const resp = await this.client.task.task.create({
+        data: {
+          summary: title,
+          description,
+          collaborator_ids: [userId],
+          origin: {
+            platform_i18n_name: JSON.stringify({ zh_cn: '飞书智能体' }),
+          },
+        },
+        params: { user_id_type: 'open_id' },
+      });
+      if (resp.code === 0 && resp.data?.task?.id) {
+        return resp.data.task.id;
+      }
+      console.error('createTodo failed:', resp.msg);
+    } catch (err) {
+      console.error('createTodo failed:', err);
+    }
+    return null;
+  }
+
+  /** 查询用户今天的待办 */
+  async queryTodayTodos(userId: string): Promise<Array<{ id: string; title: string }>> {
+    try {
+      // 今天 00:00 的 Unix 时间戳（秒）
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const startCreateTime = Math.floor(today.getTime() / 1000).toString();
+
+      const resp = await this.client.task.task.list({
+        params: {
+          page_size: 100,
+          start_create_time: startCreateTime,
+          task_completed: false,
+          user_id_type: 'open_id',
+        },
+      });
+      if (resp.code === 0 && resp.data?.items) {
+        return resp.data.items
+          .filter((t) => t.id && t.summary)
+          .map((t) => ({ id: t.id!, title: t.summary! }));
+      }
+      console.error('queryTodayTodos failed:', resp.msg);
+    } catch (err) {
+      console.error('queryTodayTodos failed:', err);
+    }
+    return [];
+  }
+
+  /** 标记待办完成 */
+  async completeTodo(todoId: string): Promise<boolean> {
+    try {
+      const resp = await this.client.task.task.complete({
+        path: { task_id: todoId },
+      });
+      if (resp.code === 0) return true;
+      console.error('completeTodo failed:', resp.msg);
+    } catch (err) {
+      console.error('completeTodo failed:', err);
+    }
+    return false;
+  }
+
   /** 下载云空间文件，返回 Buffer */
   async downloadFile(fileToken: string): Promise<Buffer | null> {
     try {

@@ -1,6 +1,7 @@
 import { createLarkChannel, LoggerLevel } from '@larksuiteoapi/node-sdk';
 import { config } from './config';
 import { handleMessage, initRootFolder } from './handler';
+import { startScheduler } from './scheduler';
 
 async function main() {
     // 初始化云盘文件夹（保留原有逻辑）
@@ -18,6 +19,9 @@ async function main() {
     channel.on('message', async (msg) => {
         await handleMessage(channel, msg);
     });
+
+    // 启动定时任务
+    startScheduler();
 
     // 连接
     await channel.connect();

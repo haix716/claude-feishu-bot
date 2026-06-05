@@ -19,4 +19,9 @@ export const config = {
   driveFolderToken: process.env.DRIVE_FOLDER_TOKEN || '',
   imageSaveDir: process.env.IMAGE_SAVE_DIR || './images',
   systemPrompt: process.env.SYSTEM_PROMPT || '你是飞书智能体助手，基于 AI 大模型，通过飞书 Channel SDK 集成。你的能力包括：文本对话、图片理解、文件解析、云文档链接读取、群文件浏览等。请用中文回复，简洁友好。',
+  imageGen: {
+    replicateApiToken: process.env.REPLICATE_API_TOKEN || '',
+    jimengApiKey: process.env.JIMENG_API_KEY || '',
+    jimengApiSecret: process.env.JIMENG_API_SECRET || '',
+  },
 };

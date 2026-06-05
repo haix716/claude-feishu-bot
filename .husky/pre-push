@@ -1,0 +1,8 @@
+#!/bin/bash
+# Pre-push hook：在 push 前再次运行安全检查
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# 运行安全检查
+"$PROJECT_ROOT/scripts/security-check.sh"

@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.5.0] - 2026-06-06
+
+### Added
+- **LibTV Provider**：接入 LiblibAI 官方 CLI（libtv），支持 Seedream/Midjourney 等模型
+- **图片发送**：生成的图片直接发送到聊天框，不再只发文字链接
+- **模型自动匹配**：穿戴效果图用 Seedream 4.6，商品图/封面用 Seedream 4.5
+
+### Changed
+- **Provider 优先级**：LibTV > 即梦 > Replicate
+- **README 更新**：新增 LibTV CLI 安装说明，删除过时的 README.zh.md
+
 ## [2.4.1] - 2026-06-05
 
 ### Security

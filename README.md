@@ -79,8 +79,10 @@ A Feishu/Lark intelligent agent powered by Channel SDK, with streaming responses
 
 ### 图片生成（v2.4 新增）
 - 🎨 用户上传图片 → AI 分析 → 生成穿戴效果图/商品图/小红书封面
-- 🤖 Replicate API（Flux 通用生图 + IDM-VTON 虚拟试穿）
+- 🤖 LibTV（LiblibAI 官方 CLI，支持 Seedream/Midjourney 等模型）
+- 🤖 Replicate API（Flux 通用生图 + IDM-VTON 虚拟试穿，备用）
 - 📝 自动提示词生成：MiMo 多模态分析图片 → 英文提示词
+- 📸 生成结果直接发送到聊天框
 
 ### 工作流能力（规划中）
 - 🎬 视频制作：TapNow / 剪映 MCP
@@ -111,7 +113,7 @@ src/
     ├── analyzer.ts       # 图片分析 + 提示词生成
     ├── prompt-builder.ts # 提示词模板库
     ├── router.ts         # 场景路由
-    └── providers/        # Provider（Replicate、即梦）
+    └── providers/        # Provider（LibTV、Replicate、即梦）
 
 scripts/
 ├── security-check.sh  # 敏感信息检测（5 层扫描）
@@ -197,7 +199,17 @@ cd feishu-agent-assistant
 npm install
 ```
 
-### 2. 配置 / Configure
+### 2. 安装 LibTV CLI（图片生成必需）/ Install LibTV CLI
+
+```bash
+# macOS / Linux
+curl -sL https://liblibai-web-static.liblib.cloud/cli/latest/install-libtv-cli.sh | bash
+
+# 登录（需要 LiblibAI 账号，推荐开通 VIP）
+libtv login web
+```
+
+### 3. 配置 / Configure
 
 ```bash
 cp .env.example .env
@@ -223,7 +235,7 @@ CLAUDE_MODEL=mimo-v2.5-pro
 # DRIVE_FOLDER_TOKEN=xxx
 ```
 
-### 3. 飞书智能体应用配置 / Feishu Agent Setup
+### 4. 飞书智能体应用配置 / Feishu Agent Setup
 
 **方式一：一键创建（推荐）**
 
@@ -246,7 +258,7 @@ CLAUDE_MODEL=mimo-v2.5-pro
 5. 添加事件：`im.message.receive_v1`
 6. 发布应用
 
-### 4. 启动 / Run
+### 5. 启动 / Run
 
 ```bash
 npm run dev     # 开发模式 / Development (ts-node)
@@ -274,6 +286,8 @@ After starting, find your agent in Feishu and send a message.
 | `IMAGE_SAVE_DIR` | | 图片/视频保存目录 | `./images` |
 | `MAX_TURNS` | | 对话历史最大轮数 | `20` |
 | `NO_PROXY` | | 绕过代理的域名 | — |
+
+> **图片生成**：需要安装 [LibTV CLI](https://www.liblib.art) 并登录（`libtv login web`）。推荐开通 LiblibAI VIP 以使用更多模型。
 
 ## 使用方式 / Usage
 
@@ -337,6 +351,7 @@ After starting, find your agent in Feishu and send a message.
 - **Runtime**: Node.js >= 20 + TypeScript
 - **飞书 SDK**: [@larksuiteoapi/node-sdk](https://github.com/larksuite/node-sdk)（Channel SDK + Client）
 - **AI SDK**: [openai](https://github.com/openai/openai-node)（OpenAI 兼容格式，支持 MiMo 等模型）
+- **图片生成**: [LibTV CLI](https://www.liblib.art)（LiblibAI 官方 CLI，支持 Seedream/Midjourney 等模型）
 - **测试**: Node.js 内置 test runner
 
 ## 开发方式 / Development Workflow

@@ -866,6 +866,11 @@ async function handleImageGeneration(
       console.warn(`[${userId}] 上传云盘失败:`, uploadErr);
     }
 
+    // 发送生成的图片给用户
+    for (let i = 0; i < result.images.length; i++) {
+      await channel.send(chatId, { image: { source: result.images[i] } }, { replyTo: msg.messageId });
+    }
+
     const replyLines = [
       `出来了，看看效果 ✅`,
       `已存到 ${dateFolder}/${savedFiles.join(', ')}`,

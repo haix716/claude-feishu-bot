@@ -7,3 +7,6 @@ dist/
 images/
 src/data/index.json
 .claude/
+
+# LibTV CLI local config
+.libtv/

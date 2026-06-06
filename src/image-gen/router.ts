@@ -8,6 +8,7 @@ import { config } from '../config';
 import type { ImageAnalysis, GenerateMode, GenerateParams, ImageProvider } from './providers/provider';
 import { JimengProvider } from './providers/jimeng';
 import { ReplicateProvider } from './providers/replicate';
+import { LibTVProvider } from './providers/libtv';
 
 /** 用户意图解析结果 */
 export interface ImageGenIntent {
@@ -22,7 +23,10 @@ export interface ImageGenIntent {
 function getProviders(): ImageProvider[] {
   const providers: ImageProvider[] = [];
 
-  // 即梦（优先，免费）
+  // LibTV（最高优先级，VIP 可用）
+  providers.push(new LibTVProvider());
+
+  // 即梦（备用）
   providers.push(new JimengProvider());
 
   // Replicate（备用）
@@ -36,15 +40,18 @@ function getProviders(): ImageProvider[] {
 /**
  * 选择最佳 Provider
  *
- * 优先级：即梦 > Replicate
- * 穿戴效果图优先用 Replicate（有专门的 Try-On 模型）
+ * 优先级：LibTV > 即梦 > Replicate
  */
 function selectProvider(mode: GenerateMode): ImageProvider {
   const providers = getProviders();
 
   if (providers.length === 0) {
-    throw new Error('没有可用的图片生成服务。请配置 REPLICATE_API_TOKEN 或安装 dreamina CLI。');
+    throw new Error('没有可用的图片生成服务。请配置 libtv CLI 或 REPLICATE_API_TOKEN。');
   }
+
+  // LibTV 优先（VIP 可用，质量好）
+  const libtv = providers.find(p => p.name === 'libtv');
+  if (libtv) return libtv;
 
   // 穿戴效果图：优先 Replicate（有专门的 Try-On 模型）
   if (mode === 'tryon') {
@@ -52,11 +59,11 @@ function selectProvider(mode: GenerateMode): ImageProvider {
     if (replicate) return replicate;
   }
 
-  // 其他模式：优先即梦（免费）
+  // 其他模式：即梦
   const jimeng = providers.find(p => p.name === 'jimeng');
   if (jimeng) return jimeng;
 
-  //  fallback
+  // fallback
   return providers[0];
 }
 

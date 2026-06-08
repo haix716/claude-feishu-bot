@@ -9,9 +9,10 @@
 
 import fs from 'fs';
 import path from 'path';
-import { config } from '../../config';
+import os from 'os';
 
-const TEMPLATE_DIR = path.join(config.imageSaveDir, 'brand-templates');
+const TEMPLATE_DIR = process.env.BRAND_TEMPLATE_DIR
+  || path.join(os.homedir(), '.feishu-agent', 'brand-templates');
 
 /** 确保模板目录存在 */
 function ensureTemplateDir(): void {

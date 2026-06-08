@@ -33,15 +33,21 @@ export const SILVER_STYLE: BrandStyle = {
   accentColor: 'deep blue, charcoal grey',
   bgColor: 'dark gradient background, deep charcoal to black',
   styleKeywords: [
-    'luxury jewelry photography',
-    'editorial style',
-    'minimalist elegance',
-    'Chinese artisan craftsmanship',
-    'matte silver texture',
+    'commercial product photography',
+    'photorealistic, 8K resolution, ultra-detailed',
+    'sharp focus, high clarity',
   ],
-  lighting: 'soft diffused lighting with subtle side highlights, creating depth and dimension on silver surface',
-  texture: 'matte brushed silver with hand-hammered texture, antique patina finish, visible artisan marks',
-  tone: 'premium, understated luxury, cultural heritage, artisanal quality',
+  lighting: 'professional studio lighting with soft diffused light from light tent, controlled reflections on silver surface, rim light for edge separation',
+  texture: 'matte brushed silver with hand-hammered texture, visible artisan craftsmanship marks',
+  tone: 'premium, understated luxury, commercial catalog quality',
+};
+
+/** 相机参数（按图片类型） */
+export const CAMERA_SPECS = {
+  main: 'shot with 100mm macro lens at f/8 for complete sharpness, centered composition',
+  angle: 'shot with 100mm macro lens at f/5.6, three-point lighting with key light from upper left',
+  detail: 'shot with 100mm macro lens at f/4, shallow depth of field with selective focus',
+  scene: 'shot with 85mm lens at f/2.8, shallow depth of field with bokeh background',
 };
 
 /** 风格提示词片段（所有图片共享） */

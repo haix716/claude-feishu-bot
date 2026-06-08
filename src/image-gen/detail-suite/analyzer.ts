@@ -35,14 +35,15 @@ export async function analyzeProduct(base64Image: string): Promise<ProductInfo> 
   "craftsmanship": "工艺特征，如 花丝镶嵌、錾刻、锤揲、抛光、做旧、珐琅",
   "designElements": "设计元素/图案，如 龙凤纹、莲花、祥云、几何图案、素面",
   "culturalMeaning": "文化寓意（如果能识别），如 龙凤呈祥、年年有余、平安如意，无法识别则为空字符串",
-  "englishDescription": "用英文写一个详细的产品描述，包含品类、材质、工艺、设计元素，用于 AI 生图提示词。50-80词。"
+  "englishDescription": "用英文写一个极其详细的产品视觉描述，用于 AI 图生图。必须包含：具体形状（圆形/方形/镂空等）、表面处理（哑光/亮面/锤纹等）、具体纹样和图案细节、镶嵌物（如有）、尺寸比例特征。80-120词。越具体越好，这是为了让 AI 生成的图片和原图保持一致。"
 }
 
 规则：
-- 仔细观察图片中的每一个细节
+- 仔细观察图片中的每一个细节，不要遗漏
 - category 必须是银饰品类之一
-- craftsmanship 如果看不清就写 "polished silver"
-- englishDescription 要详细具体，包含可观察到的所有视觉特征`
+- craftsmanship 必须描述具体的工艺手法
+- designElements 必须描述具体的图案/纹样/形状
+- englishDescription 是最重要的字段——它决定了 AI 能否生成和原图一致的产品。请用英文详细描述产品的每一个可见特征`
         },
         {
           type: 'image_url',

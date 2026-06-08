@@ -85,6 +85,86 @@ export class LibTVProvider implements ImageProvider {
   }
 
   /**
+   * 使用平台内置快捷指令生成图片（产品三视图、多机位等）
+   * 比自定义提示词的 img2img 保真度更高
+   */
+  async generateWithShortcut(
+    referenceImage: Buffer,
+    scene: string,
+  ): Promise<GenerateResult> {
+    if (!this.projectUuid) {
+      this.projectUuid = await this.createProject();
+    }
+
+    // 1. 保存参考图到临时文件
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'libtv-'));
+    const inputPath = path.join(tmpDir, 'input.png');
+    fs.writeFileSync(inputPath, referenceImage);
+
+    try {
+      // 2. 上传参考图
+      const uploadNodeName = `ref_${Date.now()}`;
+      const { stdout: uploadStdout } = await execFileAsync('libtv', [
+        'upload', uploadNodeName,
+        '--resource', inputPath,
+        '-t', 'image',
+      ], { timeout: 60000 });
+
+      const uploadResult = JSON.parse(uploadStdout);
+      if (!uploadResult.nodeKey) {
+        throw new Error(`上传图片失败: ${uploadStdout}`);
+      }
+
+      // 3. 执行快捷指令
+      console.log(`[LibTV] 执行快捷指令: ${scene} on ${uploadNodeName}`);
+      const { stdout: shortcutStdout } = await execFileAsync('libtv', [
+        'image', 'shortcut', scene,
+        '-n', uploadNodeName,
+        '-r',
+      ], { timeout: 180000 });
+
+      // 4. 解析结果（快捷指令可能生成多张图）
+      const urls: string[] = [];
+      const urlMatches = shortcutStdout.matchAll(/"url"\s*:\s*\[\s*"(https?:\/\/[^"]+)"\s*\]/g);
+      for (const match of urlMatches) {
+        urls.push(match[1]);
+      }
+
+      if (urls.length === 0) {
+        // 尝试找最后一个 JSON 块
+        const lastBraceStart = shortcutStdout.lastIndexOf('{"nodeKey"');
+        if (lastBraceStart !== -1) {
+          const jsonStr = shortcutStdout.slice(lastBraceStart);
+          const result = JSON.parse(jsonStr);
+          if (result.data?.url?.length > 0) {
+            urls.push(...result.data.url);
+          }
+        }
+      }
+
+      if (urls.length === 0) {
+        throw new Error(`快捷指令未返回图片: ${shortcutStdout.slice(0, 200)}`);
+      }
+
+      // 5. 下载所有图片
+      const allImages: Buffer[] = [];
+      for (const url of urls) {
+        const images = await this.downloadImage(url);
+        allImages.push(...images);
+      }
+
+      return {
+        images: allImages,
+        model: `libtv/${scene}`,
+      };
+    } finally {
+      // 清理临时文件
+      try { fs.unlinkSync(inputPath); } catch { /* ignore */ }
+      try { fs.rmdirSync(tmpDir); } catch { /* ignore */ }
+    }
+  }
+
+  /**
    * 选择模型
    */
   private selectModel(mode: GenerateMode, style?: string): string {
@@ -139,7 +219,7 @@ export class LibTVProvider implements ImageProvider {
     prompt: string,
     model: string,
     ratio: string,
-    mode: GenerateMode,
+    _mode: GenerateMode,
   ): Promise<string> {
     // 1. 保存参考图到临时文件
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'libtv-'));

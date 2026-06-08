@@ -6,19 +6,40 @@
  * - 4 个品牌模板图（风格固定，内容根据产品微调）
  */
 
-import { SILVER_STYLE, getStylePromptFragment } from './style-config';
+import { SILVER_STYLE, CAMERA_SPECS, getStylePromptFragment } from './style-config';
 import type { ProductInfo, DetailImageDef } from './types';
 
 const style = getStylePromptFragment(SILVER_STYLE);
 
 /**
+ * 构建产品精确描述（提示词最前面，权重最高）
+ */
+function buildProductDesc(product: ProductInfo): string {
+  const parts = [
+    product.material,
+    product.category,
+    product.craftsmanship !== 'polished silver' ? `with ${product.craftsmanship}` : '',
+    product.designElements ? `featuring ${product.designElements} patterns` : '',
+    `${product.color} finish`,
+  ].filter(Boolean);
+  return parts.join(' ');
+}
+
+/**
  * 生成产品特定的 4 个提示词
+ *
+ * 提示词结构（按权重从高到低）：
+ * 1. 产品精确描述（最前面 = 最高权重）
+ * 2. 材质/工艺细节
+ * 3. 展示方式/构图
+ * 4. 光影环境
+ * 5. 相机参数
+ * 6. 保真指令（最后，但必须有）
  */
 export function buildProductPrompts(product: ProductInfo): DetailImageDef[] {
-  const desc = product.englishDescription;
+  const desc = buildProductDesc(product);
   const craft = product.craftsmanship;
   const design = product.designElements;
-  const cat = product.category;
 
   return [
     {
@@ -26,8 +47,12 @@ export function buildProductPrompts(product: ProductInfo): DetailImageDef[] {
       name: '主图',
       prompt: [
         `Product hero shot of a ${desc}`,
-        `centered composition on ${SILVER_STYLE.bgColor}`,
+        `${craft} surface texture`,
+        `centered on ${SILVER_STYLE.bgColor}`,
         `front-facing, full product view`,
+        SILVER_STYLE.lighting,
+        CAMERA_SPECS.main,
+        `preserve exact product appearance, shape and all details from reference image`,
         style,
       ].join(', '),
       isTemplate: false,
@@ -38,9 +63,12 @@ export function buildProductPrompts(product: ProductInfo): DetailImageDef[] {
       name: '角度展示图',
       prompt: [
         `Three-quarter angle view of a ${desc}`,
-        `showing depth, dimension, and silhouette`,
-        `${craft} surface details visible from this angle`,
-        `subtle shadow on ${SILVER_STYLE.bgColor}`,
+        `${craft} surface texture visible from this angle`,
+        `on ${SILVER_STYLE.bgColor}`,
+        `showing depth, dimension, and 3D silhouette`,
+        SILVER_STYLE.lighting,
+        CAMERA_SPECS.angle,
+        `preserve exact product design, shape and surface details from reference`,
         style,
       ].join(', '),
       isTemplate: false,
@@ -50,10 +78,13 @@ export function buildProductPrompts(product: ProductInfo): DetailImageDef[] {
       id: 'detail',
       name: '细节特写图',
       prompt: [
-        `Extreme close-up macro shot of a ${desc}`,
-        `focusing on ${craft} surface texture and ${design} patterns`,
-        `visible hand-hammered marks, artisan craftsmanship details`,
-        `shallow depth of field, soft bokeh background`,
+        `Extreme macro close-up of a ${desc}`,
+        `focusing on ${craft} texture${design ? ` and ${design} pattern details` : ''}`,
+        `on ${SILVER_STYLE.bgColor}`,
+        `visible artisan craftsmanship marks and surface finish`,
+        `dramatic spotlight from 60 degrees`,
+        CAMERA_SPECS.detail,
+        `maintaining exact metalwork details and surface finish from reference image`,
         style,
       ].join(', '),
       isTemplate: false,
@@ -63,11 +94,12 @@ export function buildProductPrompts(product: ProductInfo): DetailImageDef[] {
       id: 'scene',
       name: '佩戴场景图',
       prompt: [
-        `Lifestyle editorial photo of a ${desc} being worn`,
-        `elegant woman with minimalist styling`,
-        `soft natural lighting, magazine-quality photography`,
-        `Chinese aesthetic, understated luxury atmosphere`,
-        `wearing the ${cat} as the focal point`,
+        `Lifestyle product photo of a ${desc} being worn`,
+        `woman with minimalist styling, Chinese aesthetic`,
+        `natural window light from the left, gentle shadows`,
+        `warm ambient atmosphere, understated luxury`,
+        CAMERA_SPECS.scene,
+        `preserve exact product appearance from reference image`,
         style,
       ].join(', '),
       isTemplate: false,

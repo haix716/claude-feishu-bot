@@ -96,7 +96,7 @@ src/
 8. **品牌故事图** — 模板图，可复用
 
 流程：用户发图 → 选择"4 详情图套件" → 分析产品 → 并行生成 8 张图 → 一次性发送
-模板图首次生成后缓存到 `~/.feishu-agent/brand-templates/`，后续自动复用
+模板图首次生成后缓存到 `/Users/hxy/Documents/小红书店铺/详情图/详情图模板/`，后续自动复用
 
 详细设计：`src/image-gen/detail-suite/`
 

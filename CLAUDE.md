@@ -31,14 +31,24 @@ npm run lint            # 检查代码规范
 
 ```
 src/
-├── app.ts        # 入口：createLarkChannel + Channel SDK
-├── config.ts     # 环境变量配置
-├── ai.ts         # AI API 封装（OpenAI SDK，流式 + 图片理解）
-├── lark.ts       # 飞书文件/文档操作封装（Client）
-├── handler.ts    # 消息处理主逻辑（路由 + 对话管理）
-├── util.ts       # 工具函数（正则、文件解析）
-├── tools/        # 工具调用（GetTimeTool、SearchDocTool）
-└── image-gen/    # 图片生成（v2.4.0）
+├── app.ts           # 入口：createLarkChannel + Channel SDK
+├── config.ts        # 环境变量配置
+├── ai.ts            # AI API 封装（OpenAI SDK，流式 + 图片理解）
+├── lark.ts          # 飞书文件/文档操作封装（Client）
+├── util.ts          # 工具函数（正则、文件解析）
+├── rag.ts           # 本地图片搜索
+├── oauth.ts         # OAuth 登录
+├── oauth-server.ts  # OAuth 回调服务器
+├── scheduler.ts     # 定时任务
+├── handler/         # 消息处理（按职责拆分）
+│   ├── index.ts         # re-export（对外接口）
+│   ├── router.ts        # 消息分类 + 分发
+│   ├── conversation.ts  # 对话历史、AI 回复、命令处理
+│   ├── image.ts         # 图片消息 + 图片生成
+│   ├── file.ts          # 文件/音视频/二进制/文档链接
+│   └── folder.ts        # 飞书云盘文件夹管理
+├── tools/           # 工具调用（GetTimeTool、SearchDocTool）
+└── image-gen/       # 图片生成（v2.4.0）
     ├── index.ts
     ├── analyzer.ts       # 图片分析 + 提示词生成
     ├── router.ts         # 场景路由（穿戴/商品/封面）
@@ -46,7 +56,8 @@ src/
     └── providers/
         ├── provider.ts   # ImageProvider 接口
         ├── replicate.ts  # Replicate API（Try-On + 通用生图）
-        └── jimeng.ts     # 即梦 API（商品图/封面）
+        ├── jimeng.ts     # 即梦 API（商品图/封面）
+        └── libtv.ts      # LibTV CLI（Seedream/Midjourney）
 ```
 
 核心流程：`用户消息 → Channel SDK → handler → AI stream → channel.stream() 流式更新`
@@ -115,6 +126,21 @@ src/
 3. **用户明确确认后**再 commit
 4. 多文件改动、新功能、有多种实现方案 → 先讨论再动手
 5. 涉及 API key 的操作必须让晓燕文字确认
+
+## 协作模式
+
+**晓燕给方向，Claude 给方案：**
+- 晓燕描述问题和期望效果，不规定实现方式
+- Claude 出 2-3 个方案 + 优劣对比，晓燕选
+- 选定后 Claude 全栈交付（代码 + 测试 + 文档 + 安全检查）
+
+**并行探索：**
+- 有多个可行方案时，用 worktree 同时实现
+- 看结果选，不凭想象选
+
+**后台持续改进：**
+- 安全扫描、代码质量、文档同步 — 不等晓燕发现
+- 主动提 PR，晓燕只需要 review
 
 ## 多 Agent 并行开发规范
 

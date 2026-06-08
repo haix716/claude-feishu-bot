@@ -1,0 +1,336 @@
+import { analyzeImage } from '../ai';
+import { config } from '../config';
+import { sanitizeFileName } from '../util';
+import { analyzeImageForGeneration, buildPrompt, generateImage } from '../image-gen';
+import type { ImageAnalysis, ImageGenIntent } from '../image-gen';
+import { larkService } from '../lark';
+import { getTodayDate } from './file';
+import { getRootFolderToken, getOrCreateFolder } from './folder';
+import type { LarkChannel, NormalizedMessage } from '@larksuiteoapi/node-sdk';
+import fs from 'fs';
+import path from 'path';
+
+/** 每用户待保存的图片 */
+const pendingImages = new Map<string, { buffer: Buffer; fileName: string }>();
+
+/** 每用户待处理的图片（已保存，等待用户决定是否生成） */
+const pendingImageEdit = new Map<string, {
+  buffer: Buffer;
+  analysis: ImageAnalysis | null;
+  savedPath: string;
+  fileName: string;
+  dateFolder: string;
+}>();
+
+/**
+ * 用正则匹配用户对图片的意图
+ */
+function parseImageIntent(query: string): { action: string; folder: string; fileName: string } {
+  const saveMatch = query.match(/(?:保存|存到|放到|存入|存到)\s*(.*)/);
+  if (saveMatch) {
+    const folder = saveMatch[1]?.trim() || '未整理';
+    return { action: 'save', folder, fileName: `image_${Date.now()}` };
+  }
+
+  if (query.match(/不要|删除|取消|丢掉|扔掉/)) {
+    return { action: 'discard', folder: '', fileName: '' };
+  }
+
+  return { action: 'chat', folder: '', fileName: '' };
+}
+
+/**
+ * 处理待保存图片的用户响应
+ */
+export async function handlePendingImageResponse(
+  channel: LarkChannel,
+  msg: NormalizedMessage,
+  query: string
+): Promise<boolean> {
+  const userId = msg.senderId;
+  if (!pendingImages.has(userId)) return false;
+
+  const pending = pendingImages.get(userId)!;
+  const intent = parseImageIntent(query);
+
+  if (intent.action === 'save') {
+    const folder = sanitizeFileName(intent.folder || '未整理');
+    const fileName = sanitizeFileName((intent.fileName || `image_${Date.now()}`) + '.jpg');
+    const today = getTodayDate();
+    const folderToken = await getOrCreateFolder(`${folder}/${today}`);
+    const fileToken = await larkService.uploadFile(pending.buffer, fileName, folderToken);
+    const url = `https://feishu.cn/file/${fileToken}`;
+
+    const replyMsg = `🖼️ 图片已保存\n文件夹：${folder}/${today}\n文件：${fileName}\n${url}`;
+    pendingImages.delete(userId);
+    await channel.send(msg.chatId, { text: replyMsg }, { replyTo: msg.messageId });
+  } else if (intent.action === 'discard') {
+    pendingImages.delete(userId);
+    await channel.send(msg.chatId, { text: '已丢弃图片。' }, { replyTo: msg.messageId });
+  } else {
+    pendingImages.delete(userId);
+    return false; // 让 router 重新处理为普通消息
+  }
+
+  return true;
+}
+
+/**
+ * 处理待编辑图片的用户响应
+ */
+export async function handlePendingImageEditResponse(
+  channel: LarkChannel,
+  msg: NormalizedMessage,
+  query: string
+): Promise<boolean> {
+  const userId = msg.senderId;
+  if (!pendingImageEdit.has(userId)) return false;
+
+  const pending = pendingImageEdit.get(userId)!;
+
+  const genMatch = query.match(/^(1|2|3|穿戴|商品|封面|生成|tryon|product|cover)/i);
+  if (genMatch && pending.analysis) {
+    await handleImageGeneration(channel, msg, { buffer: pending.buffer, analysis: pending.analysis }, genMatch[1]);
+    pendingImageEdit.delete(userId);
+    return true;
+  }
+
+  if (/^(完成|好了|ok|done|好)/i.test(query)) {
+    pendingImageEdit.delete(userId);
+    await channel.send(msg.chatId, { text: '好的 ✅' }, { replyTo: msg.messageId });
+    return true;
+  }
+
+  if (/^(删除|撤回|不要|丢弃|discard)/i.test(query)) {
+    try {
+      if (fs.existsSync(pending.savedPath)) {
+        fs.unlinkSync(pending.savedPath);
+      }
+    } catch { /* ignore */ }
+    pendingImageEdit.delete(userId);
+    await channel.send(msg.chatId, { text: '已删除' }, { replyTo: msg.messageId });
+    return true;
+  }
+
+  pendingImageEdit.delete(userId);
+  return false;
+}
+
+/**
+ * 处理图片消息：下载图片，分析内容，保存到本地
+ */
+export async function handleImageMessage(
+  channel: LarkChannel,
+  msg: NormalizedMessage,
+  imageKey: string
+): Promise<void> {
+  const userId = msg.senderId;
+  const chatId = msg.chatId;
+  console.log(`[${userId}] 开始处理图片: ${imageKey}`);
+
+  try {
+    // 1. 下载图片
+    console.log(`[${userId}] 下载图片中...`);
+    let buffer: Buffer | null;
+    try {
+      buffer = await larkService.getResource(msg.messageId, imageKey, 'image');
+    } catch (downloadErr) {
+      const errMsg = downloadErr instanceof Error ? downloadErr.message : String(downloadErr);
+      console.error(`[${userId}] 图片下载异常:`, errMsg);
+      await channel.send(chatId, {
+        text: `❌ 图片下载失败\n原因：${errMsg}\n请检查网络连接或重新发送。`,
+      }, { replyTo: msg.messageId });
+      return;
+    }
+    if (!buffer) {
+      await channel.send(chatId, {
+        text: '❌ 图片下载失败\n原因：返回数据为空\n请重新发送图片。',
+      }, { replyTo: msg.messageId });
+      return;
+    }
+    console.log(`[${userId}] 图片下载完成，大小: ${buffer.length} bytes`);
+
+    // 2. 分析图片内容
+    let imageDescription = '图片';
+    let imageFileName = '图片';
+    let analyzeError = '';
+    try {
+      const base64Image = buffer.toString('base64');
+      const result = await analyzeImage(base64Image);
+      imageDescription = result.description;
+      imageFileName = result.fileName;
+      console.log(`[${userId}] 图片识别完成: ${imageDescription}`);
+    } catch (analyzeErr) {
+      analyzeError = analyzeErr instanceof Error ? analyzeErr.message : String(analyzeErr);
+      console.warn(`[${userId}] 图片识别失败:`, analyzeError);
+    }
+
+    // 3. 保存到本地文件夹
+    const today = getTodayDate();
+    const dateFolder = today.replace(/-/g, '');
+    const localDir = path.join(config.imageSaveDir, dateFolder);
+
+    if (!fs.existsSync(localDir)) {
+      fs.mkdirSync(localDir, { recursive: true });
+    }
+
+    // 4. 生成文件名
+    const now = new Date();
+    const timestamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+    const contentSummary = sanitizeFileName(imageFileName);
+    const fileName = `${timestamp}_${contentSummary}.jpg`;
+    const filePath = path.join(localDir, fileName);
+
+    // 5. 保存到本地
+    try {
+      fs.writeFileSync(filePath, buffer);
+      console.log(`[${userId}] 图片已保存到本地: ${filePath}`);
+    } catch (saveErr) {
+      const errMsg = saveErr instanceof Error ? saveErr.message : String(saveErr);
+      console.error(`[${userId}] 保存图片失败:`, errMsg);
+      await channel.send(chatId, {
+        text: `❌ 图片保存失败\n文件：${fileName}\n原因：${errMsg}`,
+      }, { replyTo: msg.messageId });
+      return;
+    }
+
+    // 6. 图片生成分析
+    let genAnalysis: ImageAnalysis | null = null;
+    try {
+      const base64Image = buffer.toString('base64');
+      genAnalysis = await analyzeImageForGeneration(base64Image);
+      console.log(`[${userId}] 生成分析: ${genAnalysis.contentType}, 建议: ${genAnalysis.suggestedMode}`);
+    } catch (genErr) {
+      console.warn(`[${userId}] 生成分析失败:`, genErr);
+    }
+
+    // 7. 存储待处理图片
+    pendingImageEdit.set(userId, {
+      buffer,
+      analysis: genAnalysis,
+      savedPath: filePath,
+      fileName,
+      dateFolder,
+    });
+
+    // 8. 回复用户
+    const desc = imageDescription || '图片';
+    const replyLines = [
+      `看了下，这是一张${desc}。已经帮你存好了 ✅`,
+      `${dateFolder}/${fileName}`,
+    ];
+    if (analyzeError) {
+      replyLines.push(`识别没完全成功：${analyzeError}`);
+    }
+    if (genAnalysis) {
+      replyLines.push(`\n要处理的话回复：`);
+      replyLines.push(`1 穿戴效果图`);
+      replyLines.push(`2 商品图`);
+      replyLines.push(`3 小红书封面`);
+    }
+    await channel.send(chatId, { text: replyLines.join('\n') }, { replyTo: msg.messageId });
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.error(`[${userId}] handleImageMessage 未知错误:`, errMsg);
+    try {
+      await channel.send(chatId, {
+        text: `图片处理出错了，${errMsg}。重新发一张试试？`,
+      }, { replyTo: msg.messageId });
+    } catch (sendErr) {
+      console.error(`[${userId}] 发送错误消息也失败:`, sendErr);
+    }
+  }
+}
+
+/**
+ * 处理图片生成请求
+ */
+async function handleImageGeneration(
+  channel: LarkChannel,
+  msg: NormalizedMessage,
+  pending: { buffer: Buffer; analysis: ImageAnalysis },
+  command: string
+): Promise<void> {
+  const userId = msg.senderId;
+  const chatId = msg.chatId;
+
+  let mode: 'tryon' | 'product' | 'cover';
+  if (command === '1' || /穿戴|试穿|tryon/i.test(command)) {
+    mode = 'tryon';
+  } else if (command === '3' || /封面|cover/i.test(command)) {
+    mode = 'cover';
+  } else if (command === '2' || /商品|product/i.test(command) || /生成/i.test(command)) {
+    mode = 'product';
+  } else {
+    mode = pending.analysis.suggestedMode;
+  }
+
+  console.log(`[${userId}] 开始图片生成，模式: ${mode}`);
+
+  await channel.send(chatId, {
+    text: `在出了，等我一下...`,
+  }, { replyTo: msg.messageId });
+
+  try {
+    const intent: ImageGenIntent = { mode };
+    const prompt = buildPrompt(pending.analysis, mode, intent);
+    console.log(`[${userId}] 提示词: ${prompt}`);
+
+    const result = await generateImage(pending.buffer, prompt, intent);
+    console.log(`[${userId}] 生成完成: ${result.provider}, ${result.images.length} 张`);
+
+    const today = getTodayDate();
+    const dateFolder = today.replace(/-/g, '');
+    const localDir = path.join(config.imageSaveDir, dateFolder);
+    if (!fs.existsSync(localDir)) {
+      fs.mkdirSync(localDir, { recursive: true });
+    }
+
+    const savedFiles: string[] = [];
+    for (let i = 0; i < result.images.length; i++) {
+      const now = new Date();
+      const timestamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+      const fileName = `gen_${timestamp}_${mode}_${i + 1}.jpg`;
+      const filePath = path.join(localDir, fileName);
+      fs.writeFileSync(filePath, result.images[i]);
+      savedFiles.push(fileName);
+    }
+
+    let driveUrl = '';
+    try {
+      const rootToken = getRootFolderToken();
+      if (rootToken) {
+        const folderPath = `生成图片/${today}`;
+        const folderToken = await getOrCreateFolder(folderPath);
+        for (let i = 0; i < result.images.length; i++) {
+          const fileToken = await larkService.uploadFile(result.images[i], savedFiles[i], folderToken);
+          driveUrl = `https://feishu.cn/file/${fileToken}`;
+        }
+      }
+    } catch (uploadErr) {
+      console.warn(`[${userId}] 上传云盘失败:`, uploadErr);
+    }
+
+    // 发送生成的图片给用户
+    for (let i = 0; i < result.images.length; i++) {
+      await channel.send(chatId, { image: { source: result.images[i] } }, { replyTo: msg.messageId });
+    }
+
+    const replyLines = [
+      `出来了，看看效果 ✅`,
+      `已存到 ${dateFolder}/${savedFiles.join(', ')}`,
+    ];
+    if (driveUrl) {
+      replyLines.push(`云盘：${driveUrl}`);
+    }
+
+    await channel.send(chatId, { text: replyLines.join('\n') }, { replyTo: msg.messageId });
+
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.error(`[${userId}] 图片生成失败:`, errMsg);
+    await channel.send(chatId, {
+      text: `没生成成功，${errMsg}。要再试一次吗？`,
+    }, { replyTo: msg.messageId });
+  }
+}

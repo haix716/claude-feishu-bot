@@ -21,6 +21,7 @@ export async function handleMessage(
     const fileResource = msg.resources.find((r) => r.type === 'file');
 
     console.log(`[${userId}] 资源类型: image=${!!imageResource}, audio=${!!audioResource}, video=${!!videoResource}, file=${!!fileResource}`);
+    console.log(`[${userId}] 所有资源:`, JSON.stringify(msg.resources.map(r => ({ type: r.type, fileName: r.fileName }))));
     if (fileResource) {
       console.log(`[${userId}] 文件名: ${fileResource.fileName}`);
     }

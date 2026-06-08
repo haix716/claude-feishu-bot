@@ -53,23 +53,32 @@ export async function handlePendingImageResponse(
   const pending = pendingImages.get(userId)!;
   const intent = parseImageIntent(query);
 
-  if (intent.action === 'save') {
-    const folder = sanitizeFileName(intent.folder || '未整理');
-    const fileName = sanitizeFileName((intent.fileName || `image_${Date.now()}`) + '.jpg');
-    const today = getTodayDate();
-    const folderToken = await getOrCreateFolder(`${folder}/${today}`);
-    const fileToken = await larkService.uploadFile(pending.buffer, fileName, folderToken);
-    const url = `https://feishu.cn/file/${fileToken}`;
+  try {
+    if (intent.action === 'save') {
+      const folder = sanitizeFileName(intent.folder || '未整理');
+      const fileName = sanitizeFileName((intent.fileName || `image_${Date.now()}`) + '.jpg');
+      const today = getTodayDate();
+      const folderToken = await getOrCreateFolder(`${folder}/${today}`);
+      const fileToken = await larkService.uploadFile(pending.buffer, fileName, folderToken);
+      const url = `https://feishu.cn/file/${fileToken}`;
 
-    const replyMsg = `🖼️ 图片已保存\n文件夹：${folder}/${today}\n文件：${fileName}\n${url}`;
+      const replyMsg = `🖼️ 图片已保存\n文件夹：${folder}/${today}\n文件：${fileName}\n${url}`;
+      pendingImages.delete(userId);
+      await channel.send(msg.chatId, { text: replyMsg }, { replyTo: msg.messageId });
+    } else if (intent.action === 'discard') {
+      pendingImages.delete(userId);
+      await channel.send(msg.chatId, { text: '已丢弃图片。' }, { replyTo: msg.messageId });
+    } else {
+      pendingImages.delete(userId);
+      return false; // 让 router 重新处理为普通消息
+    }
+  } catch (err) {
     pendingImages.delete(userId);
-    await channel.send(msg.chatId, { text: replyMsg }, { replyTo: msg.messageId });
-  } else if (intent.action === 'discard') {
-    pendingImages.delete(userId);
-    await channel.send(msg.chatId, { text: '已丢弃图片。' }, { replyTo: msg.messageId });
-  } else {
-    pendingImages.delete(userId);
-    return false; // 让 router 重新处理为普通消息
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.error(`[${userId}] handlePendingImageResponse 失败:`, errMsg);
+    await channel.send(msg.chatId, {
+      text: `图片保存失败：${errMsg}`,
+    }, { replyTo: msg.messageId });
   }
 
   return true;

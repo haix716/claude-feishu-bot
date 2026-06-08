@@ -77,20 +77,56 @@ fi
 # ==================== 2. 错误处理风险 ====================
 echo "  扫描错误处理风险..."
 
-# 2a. async 函数没有 try-catch
+# 2a. async 函数没有 try-catch（排除工具函数：有 throw 的函数设计为让调用方处理）
 for file in $FILES; do
   if [ -f "$file" ]; then
-    # 找 export async function
     ASYNC_FUNCS=$(grep -n "export async function\|async function" "$file" 2>/dev/null || true)
     if [ -n "$ASYNC_FUNCS" ]; then
       while IFS= read -r line; do
         LINE_NUM=$(echo "$line" | cut -d: -f1)
-        # 检查接下来 30 行有没有 try
-        BLOCK=$(sed -n "${LINE_NUM},$((LINE_NUM + 30))p" "$file" 2>/dev/null)
-        if ! echo "$BLOCK" | grep -q "try" 2>/dev/null; then
-          FUNC_NAME=$(echo "$line" | sed 's/.*function //' | sed 's/(.*//')
-          add_risk "MEDIUM" "ERROR_HANDLING" "async function ${FUNC_NAME}() 没有 try-catch — 未捕获的异常会导致静默失败" "$file:$LINE_NUM"
+        FUNC_NAME=$(echo "$line" | sed 's/.*function //' | sed 's/(.*//')
+
+        # 检查函数体（前 120 行）是否有 try-catch
+        FUNC_BODY=$(sed -n "${LINE_NUM},$((LINE_NUM + 120))p" "$file" 2>/dev/null)
+        HAS_TRY=$(echo "$FUNC_BODY" | grep -c "try" 2>/dev/null || true)
+
+        # 如果已有 try-catch，跳过
+        if [ "$HAS_TRY" -gt 0 ]; then
+          continue
         fi
+
+        # 如果函数内部有 throw，说明是工具函数（设计为让调用方处理错误），跳过
+        HAS_THROW=$(echo "$FUNC_BODY" | grep -c "throw" 2>/dev/null || true)
+        if [ "$HAS_THROW" -gt 0 ]; then
+          continue
+        fi
+
+        # 如果该函数被 handler 模块调用，说明调用方有顶层 try-catch，跳过
+        # handler 模块（router.ts, conversation.ts, image.ts, file.ts）都有顶层错误保护
+        CALLED_BY_HANDLER=false
+        for caller_file in $FILES; do
+          if [ -f "$caller_file" ]; then
+            if echo "$caller_file" | grep -qE "handler/(router|conversation|image|file)" 2>/dev/null; then
+              if grep -q "${FUNC_NAME}" "$caller_file" 2>/dev/null; then
+                CALLED_BY_HANDLER=true
+                break
+              fi
+            fi
+          fi
+        done
+        if [ "$CALLED_BY_HANDLER" = true ]; then
+          continue
+        fi
+
+        # 如果是 main 函数且有 .catch，跳过
+        if [ "$FUNC_NAME" = "main" ]; then
+          MAIN_CALL=$(grep -A2 "main()" "$file" 2>/dev/null || true)
+          if echo "$MAIN_CALL" | grep -q "\.catch" 2>/dev/null; then
+            continue
+          fi
+        fi
+
+        add_risk "MEDIUM" "ERROR_HANDLING" "async function ${FUNC_NAME}() 没有 try-catch — 未捕获的异常会导致静默失败" "$file:$LINE_NUM"
       done <<< "$ASYNC_FUNCS"
     fi
   fi

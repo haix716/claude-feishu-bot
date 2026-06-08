@@ -95,91 +95,92 @@ export async function handleTextMessage(
 
   if (!query) return;
 
-  // 检测飞书文档链接，读取内容拼入消息
-  const docLinks = extractFeishuDocLinks(query);
-  if (docLinks.length > 0) {
-    const docParts: string[] = [];
-    for (const link of docLinks) {
-      const content = await fetchDocLinkContent(link.type, link.token);
-      if (content) docParts.push(content);
-    }
-    if (docParts.length > 0) {
-      query = `${query}\n\n${docParts.join('\n\n')}`;
-    }
-  }
-
-  // /clear 命令
-  if (query.trim() === '/clear') {
-    conversations.delete(userId);
-    await channel.send(chatId, { text: '对话已清除 ✅' }, { replyTo: messageId });
-    return;
-  }
-
-  // 群文件指令
-  if (query.trim() === '群文件') {
-    const files = await larkService.listFiles(chatId);
-    const text = formatFileList(files);
-    await channel.send(chatId, { text }, { replyTo: messageId });
-    return;
-  }
-
-  // 读文件指令
-  const readFileName = parseFileCommand(query);
-  if (readFileName) {
-    const { handleReadFile } = await import('./file');
-    await handleReadFile(channel, msg, readFileName);
-    return;
-  }
-
-  // 搜索图片指令
-  const searchMatch = query.match(/^(?:搜|搜索|search)\s*(.+)$/i);
-  if (searchMatch) {
-    const searchQuery = searchMatch[1].trim();
-    if (searchQuery) {
-      console.log(`[${userId}] 搜索图片: ${searchQuery}`);
-      const results = searchImages(searchQuery);
-      let text: string;
-      if (results.length === 0) {
-        text = `🔍 搜索结果："${searchQuery}"\n没有找到相关图片`;
-      } else {
-        const lines = results.map(
-          (r, i) => `${i + 1}. ${r.fileName.replace(/\.[^.]+$/, '').replace(/^\d{14}_/, '')}\n      📁 ${r.relativePath}`
-        );
-        text = `🔍 搜索结果："${searchQuery}"\n找到 ${results.length} 张相关图片：\n\n${lines.join('\n\n')}`;
+  try {
+    // 检测飞书文档链接，读取内容拼入消息
+    const docLinks = extractFeishuDocLinks(query);
+    if (docLinks.length > 0) {
+      const docParts: string[] = [];
+      for (const link of docLinks) {
+        const content = await fetchDocLinkContent(link.type, link.token);
+        if (content) docParts.push(content);
       }
+      if (docParts.length > 0) {
+        query = `${query}\n\n${docParts.join('\n\n')}`;
+      }
+    }
+
+    // /clear 命令
+    if (query.trim() === '/clear') {
+      conversations.delete(userId);
+      await channel.send(chatId, { text: '对话已清除 ✅' }, { replyTo: messageId });
+      return;
+    }
+
+    // 群文件指令
+    if (query.trim() === '群文件') {
+      const files = await larkService.listFiles(chatId);
+      const text = formatFileList(files);
       await channel.send(chatId, { text }, { replyTo: messageId });
       return;
     }
-  }
 
-  // 并发检查
-  if (running.get(userId)) {
-    await channel.send(chatId, { text: '上一条回复还在生成中，请稍候...' }, { replyTo: messageId });
-    return;
-  }
+    // 读文件指令
+    const readFileName = parseFileCommand(query);
+    if (readFileName) {
+      const { handleReadFile } = await import('./file');
+      await handleReadFile(channel, msg, readFileName);
+      return;
+    }
 
-  // 获取上下文信息
-  console.log(`[${userId}] 获取上下文...`);
-  const ctx = await fetchContext(userId, chatId, chatType);
-  console.log(`[${userId}] 上下文:`, ctx);
+    // 搜索图片指令
+    const searchMatch = query.match(/^(?:搜|搜索|search)\s*(.+)$/i);
+    if (searchMatch) {
+      const searchQuery = searchMatch[1].trim();
+      if (searchQuery) {
+        console.log(`[${userId}] 搜索图片: ${searchQuery}`);
+        const results = searchImages(searchQuery);
+        let text: string;
+        if (results.length === 0) {
+          text = `🔍 搜索结果："${searchQuery}"\n没有找到相关图片`;
+        } else {
+          const lines = results.map(
+            (r, i) => `${i + 1}. ${r.fileName.replace(/\.[^.]+$/, '').replace(/^\d{14}_/, '')}\n      📁 ${r.relativePath}`
+          );
+          text = `🔍 搜索结果："${searchQuery}"\n找到 ${results.length} 张相关图片：\n\n${lines.join('\n\n')}`;
+        }
+        await channel.send(chatId, { text }, { replyTo: messageId });
+        return;
+      }
+    }
 
-  // 获取或创建对话历史
-  if (!conversations.has(userId)) {
-    conversations.set(userId, []);
-  }
-  const history = conversations.get(userId)!;
+    // 并发检查
+    if (running.get(userId)) {
+      await channel.send(chatId, { text: '上一条回复还在生成中，请稍候...' }, { replyTo: messageId });
+      return;
+    }
 
-  // 追加用户消息
-  history.push({ role: 'user', content: query });
+    // 获取上下文信息
+    console.log(`[${userId}] 获取上下文...`);
+    const ctx = await fetchContext(userId, chatId, chatType);
+    console.log(`[${userId}] 上下文:`, ctx);
 
-  // 裁剪历史
-  while (history.length > config.maxTurns * 2) {
-    history.shift();
-  }
+    // 获取或创建对话历史
+    if (!conversations.has(userId)) {
+      conversations.set(userId, []);
+    }
+    const history = conversations.get(userId)!;
 
-  running.set(userId, true);
+    // 追加用户消息
+    history.push({ role: 'user', content: query });
 
-  try {
+    // 裁剪历史
+    while (history.length > config.maxTurns * 2) {
+      history.shift();
+    }
+
+    running.set(userId, true);
+
+    // 流式输出
     console.log(`[${userId}] 调用 AI API...`);
     let fullText = '';
     await channel.stream(chatId, {

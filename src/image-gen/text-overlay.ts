@@ -78,21 +78,27 @@ export async function addTextOverlay(
 
   const svgBuffer = Buffer.from(svg);
 
-  // 计算叠加位置
+  // 计算叠加位置（确保是整数）
   let top: number;
   if (position === 'top') {
     top = 0;
   } else if (position === 'center') {
     top = Math.floor((imgHeight - totalHeight) / 2);
   } else {
-    top = imgHeight - totalHeight;
+    top = Math.floor(imgHeight - totalHeight);
   }
+
+  // 确保 top 是有效整数
+  top = Math.max(0, Math.min(top, imgHeight - totalHeight));
+  top = Math.round(top);
+
+  console.log(`[TextOverlay] 图片尺寸: ${imgWidth}x${imgHeight}, 文字层高度: ${totalHeight}, 位置: ${position}, top: ${top}`);
 
   // 使用 sharp 合成
   const result = await sharp(imageBuffer)
     .composite([{
       input: svgBuffer,
-      top: Math.max(0, top),
+      top: top,
       left: 0,
     }])
     .jpeg({ quality: 95 })

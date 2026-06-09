@@ -44,25 +44,25 @@ const PRODUCT_JOBS: ProductImageJob[] = [
     id: 'main',
     name: '主图',
     styleRefId: 'main',
-    prompt: 'Product hero shot, centered on dark gradient background, front-facing, full product view, professional studio lighting, photorealistic, 8K',
+    prompt: '小红书产品主图, 居中构图, 深色渐变背景, 正面全貌, 专业棚拍, 超高清 8K',
   },
   {
     id: 'angle',
     name: '角度展示图',
     styleRefId: 'angle',
-    prompt: 'Three-quarter angle view, showing depth and dimension, dark gradient background, studio lighting, photorealistic, 8K',
+    prompt: '小红书产品角度图, 45度侧面展示, 深色渐变背景, 棚拍灯光, 超高清 8K',
   },
   {
     id: 'detail',
     name: '细节特写图',
     styleRefId: 'detail',
-    prompt: 'Extreme macro close-up, focusing on surface texture and craftsmanship details, shallow depth of field, dramatic spotlight, photorealistic, 8K',
+    prompt: '小红书产品细节图, 极致微距特写, 聚焦表面质感和工艺细节, 浅景深, 聚光灯, 超高清 8K',
   },
   {
     id: 'scene',
     name: '佩戴场景图',
     styleRefId: 'scene',
-    prompt: 'Lifestyle product photo being worn, woman with minimalist styling, natural window light, warm ambient atmosphere, photorealistic, 8K',
+    prompt: '小红书穿搭博主风格, 简约女性佩戴, 自然窗光, 温暖氛围, 超高清 8K',
   },
 ];
 
@@ -176,7 +176,7 @@ export async function generateDetailSuite(
     // 场景图用自定义提示词
     onProgress?.(completed + 1, TOTAL_STEPS, '佩戴场景图');
     try {
-      const scenePrompt = `Lifestyle product photo of a ${productDesc} being worn, woman with minimalist styling, natural window light, preserve exact product appearance, photorealistic, 8K`;
+      const scenePrompt = `小红书穿搭博主风格, ${productDesc} 佩戴效果, 简约女性, 自然窗光, 保留产品精确外观, 超高清 8K`;
       const sceneResult = await withTimeout(
         generateImage(imageBuffer, scenePrompt, { mode: 'product' }),
         120000,

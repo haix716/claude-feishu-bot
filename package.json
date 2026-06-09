@@ -16,11 +16,13 @@
     "@saintno/comfyui-sdk": "^0.3.1",
     "dotenv": "^16.5.1",
     "node-cron": "^3.0.0",
-    "openai": "^5.0.0"
+    "openai": "^5.0.0",
+    "sharp": "^0.34.5"
   },
   "devDependencies": {
     "@types/node": "^24.0.3",
     "@types/node-cron": "^3.0.0",
+    "@types/sharp": "^0.31.1",
     "husky": "^9.1.7",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3"

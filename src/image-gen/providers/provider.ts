@@ -14,6 +14,8 @@ export type GenerateMode = 'tryon' | 'product' | 'cover';
 export interface ImageAnalysis {
   contentType: ContentType;
   category: string;           // 具体品类：T恤、保温杯、项链
+  description: string;        // 中文描述（100字以内）
+  fileName: string;           // 中文文件名（12字以内）
   attributes: {
     color: string;            // 主要颜色
     material: string;         // 材质

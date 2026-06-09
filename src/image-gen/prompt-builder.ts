@@ -22,12 +22,12 @@ export function buildTryOnPrompt(analysis: ImageAnalysis, options?: { modelType?
   const { color, material, style } = analysis.attributes;
 
   const parts = [
-    `A ${modelDesc} wearing a ${color} ${material} ${analysis.category}`,
-    `${style} style`,
-    'natural body posture, realistic fit',
-    'professional fashion photography',
-    'natural lighting, full body shot',
-    'high quality, 4K, detailed fabric texture',
+    `${modelDesc} 穿着 ${color} ${material} ${analysis.category}`,
+    `${style} 风格`,
+    '自然体态, 真实穿着效果',
+    '时尚穿搭摄影, 小红书穿搭博主风格',
+    '柔和自然光, 全身照',
+    '超高清, 4K, 面料质感清晰',
   ];
 
   return parts.join(', ');
@@ -40,11 +40,11 @@ export function buildProductWhiteBgPrompt(analysis: ImageAnalysis): string {
   const { color, material } = analysis.attributes;
 
   const parts = [
-    `Product photography of a ${color} ${material} ${analysis.category}`,
-    'clean white background',
-    'professional studio lighting, soft shadows',
-    'commercial product photo, centered composition',
-    'high resolution, sharp details, 4K',
+    `产品摄影, ${color} ${material} ${analysis.category}`,
+    '干净白色背景',
+    '专业棚拍, 柔和阴影',
+    '商业产品图, 居中构图',
+    '超高清, 细节锐利, 4K',
   ];
 
   return parts.join(', ');
@@ -58,20 +58,20 @@ export function buildProductScenePrompt(analysis: ImageAnalysis, options?: { sty
   const sceneStyle = options?.style || 'lifestyle';
 
   const sceneMap: Record<string, string> = {
-    lifestyle: 'on a wooden table in a modern kitchen, warm natural lighting',
-    outdoor: 'in an outdoor setting with nature background, golden hour lighting',
-    minimalist: 'on a clean marble surface, minimalist aesthetic, soft diffused light',
-    luxury: 'on a premium display stand, dramatic lighting, luxury brand aesthetic',
+    lifestyle: '现代家居桌面, 温暖自然光, 精致生活感',
+    outdoor: '户外自然场景, 黄金时刻光线, 清新空气感',
+    minimalist: '大理石台面, 极简美学, 柔和漫射光',
+    luxury: '高端展示台, 戏剧性光影, 奢华品牌质感',
   };
 
   const scene = sceneMap[sceneStyle] || sceneMap.lifestyle;
 
   const parts = [
-    `A ${color} ${material} ${analysis.category} ${scene}`,
-    `${style} style`,
-    'lifestyle product photography',
-    'shallow depth of field, bokeh background',
-    'high quality, 4K, visually appealing',
+    `${color} ${material} ${analysis.category}, ${scene}`,
+    `${style} 风格`,
+    '生活方式产品摄影',
+    '浅景深, 虚化背景',
+    '超高清, 4K, 精致质感',
   ];
 
   return parts.join(', ');
@@ -85,20 +85,20 @@ export function buildCoverPrompt(analysis: ImageAnalysis, options?: { style?: st
   const coverStyle = options?.style || 'aesthetic';
 
   const styleMap: Record<string, string> = {
-    aesthetic: 'aesthetic, Instagram-worthy, trendy, visually appealing',
-    cute: 'cute, kawaii style, pastel colors, soft and dreamy',
-    minimal: 'minimalist, clean composition, modern aesthetic',
-    vibrant: 'vibrant colors, dynamic composition, eye-catching',
+    aesthetic: '精致生活感, 种草风格, 小红书爆款封面, 柔和暖色调, 精致摆拍',
+    cute: '可爱少女风, 粉色系, 柔光梦幻, 日系清新',
+    minimal: '极简高级感, 低饱和度, 干净留白, 现代审美',
+    vibrant: '活力撞色, 吸睛构图, 潮流感, 视觉冲击',
   };
 
   const styleDesc = styleMap[coverStyle] || styleMap.aesthetic;
 
   const parts = [
-    `Beautiful product photography of a ${color} ${material} ${analysis.category}`,
+    `精致产品摄影, ${color} ${material} ${analysis.category}`,
     styleDesc,
-    'soft natural lighting, well-balanced composition',
-    'social media cover image style',
-    'high quality, 4K, Pinterest-worthy',
+    '柔和自然光, 精致构图, 干净背景',
+    '小红书封面风格, 种草感, 高级质感',
+    '超高清, 4K, 商业级品质',
   ];
 
   return parts.join(', ');

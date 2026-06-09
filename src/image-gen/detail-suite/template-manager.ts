@@ -17,10 +17,11 @@
  */
 
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 
 const TEMPLATE_DIR = process.env.BRAND_TEMPLATE_DIR
-  || path.join('/Users/hxy/Documents/小红书店铺', '详情图', '详情图模板');
+  || path.join(os.homedir(), 'Documents', '小红书店铺', '详情图', '详情图模板');
 
 /** 确保模板目录存在 */
 function ensureTemplateDir(): void {

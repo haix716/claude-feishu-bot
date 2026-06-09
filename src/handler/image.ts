@@ -1,4 +1,3 @@
-import { analyzeImage } from '../ai';
 import { config } from '../config';
 import { sanitizeFileName } from '../util';
 import { analyzeImageForGeneration, buildPrompt, generateImage } from '../image-gen';
@@ -97,9 +96,12 @@ export async function handlePendingImageEditResponse(
 
   const pending = pendingImageEdit.get(userId)!;
 
-  const genMatch = query.match(/^(1|2|3|4|穿戴|商品|封面|详情|生成|tryon|product|cover|detail)/i);
+  // 匹配命令和可选的文字内容（如 "3 秋冬必备保温杯" 或 "封面 秋冬必备保温杯"）
+  const genMatch = query.match(/^(1|2|3|4|穿戴|商品|封面|详情|生成|tryon|product|cover|detail)\s*(.*)/i);
   if (genMatch && pending.analysis) {
-    await handleImageGeneration(channel, msg, { buffer: pending.buffer, analysis: pending.analysis }, genMatch[1]);
+    const command = genMatch[1];
+    const overlayText = genMatch[2]?.trim() || '';
+    await handleImageGeneration(channel, msg, { buffer: pending.buffer, analysis: pending.analysis }, command, overlayText);
     pendingImageEdit.delete(userId);
     return true;
   }
@@ -159,19 +161,16 @@ export async function handleImageMessage(
     }
     console.log(`[${userId}] 图片下载完成，大小: ${buffer.length} bytes`);
 
-    // 2. 分析图片内容
-    let imageDescription = '图片';
-    let imageFileName = '图片';
+    // 2. 一次调用完成图片分析（描述 + 生成参数）
+    let genAnalysis: ImageAnalysis | null = null;
     let analyzeError = '';
     try {
       const base64Image = buffer.toString('base64');
-      const result = await analyzeImage(base64Image);
-      imageDescription = result.description;
-      imageFileName = result.fileName;
-      console.log(`[${userId}] 图片识别完成: ${imageDescription}`);
+      genAnalysis = await analyzeImageForGeneration(base64Image);
+      console.log(`[${userId}] 图片分析完成: ${genAnalysis.description}, 类型: ${genAnalysis.contentType}, 建议: ${genAnalysis.suggestedMode}`);
     } catch (analyzeErr) {
       analyzeError = analyzeErr instanceof Error ? analyzeErr.message : String(analyzeErr);
-      console.warn(`[${userId}] 图片识别失败:`, analyzeError);
+      console.warn(`[${userId}] 图片分析失败:`, analyzeError);
     }
 
     // 3. 保存到本地文件夹
@@ -186,7 +185,7 @@ export async function handleImageMessage(
     // 4. 生成文件名
     const now = new Date();
     const timestamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
-    const contentSummary = sanitizeFileName(imageFileName);
+    const contentSummary = sanitizeFileName(genAnalysis?.fileName || '图片');
     const fileName = `${timestamp}_${contentSummary}.jpg`;
     const filePath = path.join(localDir, fileName);
 
@@ -203,17 +202,7 @@ export async function handleImageMessage(
       return;
     }
 
-    // 6. 图片生成分析
-    let genAnalysis: ImageAnalysis | null = null;
-    try {
-      const base64Image = buffer.toString('base64');
-      genAnalysis = await analyzeImageForGeneration(base64Image);
-      console.log(`[${userId}] 生成分析: ${genAnalysis.contentType}, 建议: ${genAnalysis.suggestedMode}`);
-    } catch (genErr) {
-      console.warn(`[${userId}] 生成分析失败:`, genErr);
-    }
-
-    // 7. 存储待处理图片
+    // 6. 存储待处理图片
     pendingImageEdit.set(userId, {
       buffer,
       analysis: genAnalysis,
@@ -222,8 +211,8 @@ export async function handleImageMessage(
       dateFolder,
     });
 
-    // 8. 回复用户
-    const desc = imageDescription || '图片';
+    // 7. 回复用户
+    const desc = genAnalysis?.description || '图片';
     const replyLines = [
       `看了下，这是一张${desc}。已经帮你存好了 ✅`,
       `${dateFolder}/${fileName}`,
@@ -235,7 +224,7 @@ export async function handleImageMessage(
       replyLines.push(`\n要处理的话回复：`);
       replyLines.push(`1 穿戴效果图`);
       replyLines.push(`2 商品图`);
-      replyLines.push(`3 小红书封面`);
+      replyLines.push(`3 小红书封面（可加文字，如 3 秋冬必备保温杯）`);
       replyLines.push(`4 详情图套件（8张）`);
     }
     await channel.send(chatId, { text: replyLines.join('\n') }, { replyTo: msg.messageId });
@@ -259,7 +248,8 @@ async function handleImageGeneration(
   channel: LarkChannel,
   msg: NormalizedMessage,
   pending: { buffer: Buffer; analysis: ImageAnalysis },
-  command: string
+  command: string,
+  overlayText?: string,
 ): Promise<void> {
   const userId = msg.senderId;
   const chatId = msg.chatId;
@@ -281,7 +271,8 @@ async function handleImageGeneration(
     mode = pending.analysis.suggestedMode;
   }
 
-  console.log(`[${userId}] 开始图片生成，模式: ${mode}`);
+  const textHint = overlayText ? `，带文字「${overlayText}」` : '';
+  console.log(`[${userId}] 开始图片生成，模式: ${mode}${textHint}`);
 
   await channel.send(chatId, {
     text: `在出了，等我一下...`,
@@ -295,6 +286,21 @@ async function handleImageGeneration(
     const result = await generateImage(pending.buffer, prompt, intent);
     console.log(`[${userId}] 生成完成: ${result.provider}, ${result.images.length} 张`);
 
+    // 如果是封面模式且有文字，应用文字叠加
+    let finalImages = result.images;
+    if (mode === 'cover' && overlayText && result.images.length > 0) {
+      try {
+        const { addTextOverlay } = await import('../image-gen/text-overlay');
+        const processed = await Promise.all(
+          result.images.map(img => addTextOverlay(img, { text: overlayText }))
+        );
+        finalImages = processed;
+        console.log(`[${userId}] 文字叠加完成`);
+      } catch (overlayErr) {
+        console.warn(`[${userId}] 文字叠加失败，使用原图:`, overlayErr);
+      }
+    }
+
     const today = getTodayDate();
     const dateFolder = today.replace(/-/g, '');
     const localDir = path.join(config.imageSaveDir, dateFolder);
@@ -303,12 +309,12 @@ async function handleImageGeneration(
     }
 
     const savedFiles: string[] = [];
-    for (let i = 0; i < result.images.length; i++) {
+    for (let i = 0; i < finalImages.length; i++) {
       const now = new Date();
       const timestamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
       const fileName = `gen_${timestamp}_${mode}_${i + 1}.jpg`;
       const filePath = path.join(localDir, fileName);
-      fs.writeFileSync(filePath, result.images[i]);
+      fs.writeFileSync(filePath, finalImages[i]);
       savedFiles.push(fileName);
     }
 
@@ -318,8 +324,8 @@ async function handleImageGeneration(
       if (rootToken) {
         const folderPath = `生成图片/${today}`;
         const folderToken = await getOrCreateFolder(folderPath);
-        for (let i = 0; i < result.images.length; i++) {
-          const fileToken = await larkService.uploadFile(result.images[i], savedFiles[i], folderToken);
+        for (let i = 0; i < finalImages.length; i++) {
+          const fileToken = await larkService.uploadFile(finalImages[i], savedFiles[i], folderToken);
           driveUrl = `https://feishu.cn/file/${fileToken}`;
         }
       }
@@ -328,8 +334,8 @@ async function handleImageGeneration(
     }
 
     // 发送生成的图片给用户
-    for (let i = 0; i < result.images.length; i++) {
-      await channel.send(chatId, { image: { source: result.images[i] } }, { replyTo: msg.messageId });
+    for (let i = 0; i < finalImages.length; i++) {
+      await channel.send(chatId, { image: { source: finalImages[i] } }, { replyTo: msg.messageId });
     }
 
     const replyLines = [

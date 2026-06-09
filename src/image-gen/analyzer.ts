@@ -14,7 +14,7 @@ const openai = new OpenAI({
 });
 
 /**
- * 分析图片内容，返回结构化信息 + 英文提示词
+ * 分析图片内容，返回结构化信息 + 中文描述 + 英文提示词（一次调用）
  */
 export async function analyzeImageForGeneration(base64Image: string): Promise<ImageAnalysis> {
   const response = await openai.chat.completions.create({
@@ -30,6 +30,8 @@ export async function analyzeImageForGeneration(base64Image: string): Promise<Im
 {
   "contentType": "clothing 或 product 或 accessory 或 other",
   "category": "具体品类，如 T恤、保温杯、项链、手机壳",
+  "description": "用中文描述图片内容，100字以内",
+  "fileName": "用中文生成一个简短的文件名，12个字以内，不要包含特殊字符和空格",
   "color": "主要颜色",
   "material": "材质，如 棉、不锈钢、皮革、塑料",
   "style": "风格，如 简约、复古、可爱、运动、商务",
@@ -41,6 +43,8 @@ export async function analyzeImageForGeneration(base64Image: string): Promise<Im
 规则：
 - contentType：衣服、裤子、裙子、外套等穿在身上的东西 → clothing；包、手机壳、杯子等商品 → product；项链、戒指、手表等配饰 → accessory；其他 → other
 - suggestedMode：clothing 类型默认 tryon；product 类型默认 product；都可以做 cover
+- description：简洁的中文描述，适合用户快速了解图片内容
+- fileName：简短的中文文件名，用于保存图片
 - englishPrompt 要详细、具体，适合直接用于 AI 图片生成模型`
         },
         {
@@ -49,7 +53,7 @@ export async function analyzeImageForGeneration(base64Image: string): Promise<Im
         },
       ],
     }],
-    max_completion_tokens: 500,
+    max_completion_tokens: 600,
   });
 
   const content = response.choices[0]?.message?.content || '';
@@ -66,6 +70,8 @@ export async function analyzeImageForGeneration(base64Image: string): Promise<Im
     return {
       contentType: validateContentType(data.contentType),
       category: data.category || '未知',
+      description: data.description || data.category || '图片',
+      fileName: data.fileName || data.category || '图片',
       attributes: {
         color: data.color || '未知',
         material: data.material || '未知',
@@ -83,6 +89,8 @@ export async function analyzeImageForGeneration(base64Image: string): Promise<Im
     return {
       contentType: 'other',
       category: '商品',
+      description: content.substring(0, 100) || '图片',
+      fileName: '图片',
       attributes: {
         color: '未知',
         material: '未知',

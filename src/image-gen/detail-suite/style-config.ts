@@ -1,10 +1,11 @@
 /**
  * 品牌风格配置（银饰专用）
  *
- * 基于老铺黄金的视觉体系，适配银饰：
+ * 基于小红书视觉体系，适配银饰：
  * - 深色背景 + 银色主调
  * - 哑光质感 + 高级感
  * - 中国文化元素
+ * - 小红书种草风格
  */
 
 export interface BrandStyle {
@@ -33,13 +34,14 @@ export const SILVER_STYLE: BrandStyle = {
   accentColor: 'deep blue, charcoal grey',
   bgColor: 'dark gradient background, deep charcoal to black',
   styleKeywords: [
-    'commercial product photography',
+    '小红书产品详情图风格',
+    '种草感, 高级质感, 精致生活',
     'photorealistic, 8K resolution, ultra-detailed',
     'sharp focus, high clarity',
   ],
   lighting: 'professional studio lighting with soft diffused light from light tent, controlled reflections on silver surface, rim light for edge separation',
   texture: 'matte brushed silver with hand-hammered texture, visible artisan craftsmanship marks',
-  tone: 'premium, understated luxury, commercial catalog quality',
+  tone: '小红书种草风格, 精致高级感, 商业级品质',
 };
 
 /** 相机参数（按图片类型） */

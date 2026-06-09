@@ -2,6 +2,8 @@ import { config } from '../config';
 import { sanitizeFileName } from '../util';
 import { analyzeImageForGeneration, buildPrompt, generateImage } from '../image-gen';
 import type { ImageAnalysis, ImageGenIntent } from '../image-gen';
+import { generateXhsContent, generateCoverTitle } from '../xhs';
+import { addTextOverlay } from '../image-gen/text-overlay';
 import { larkService } from '../lark';
 import { getTodayDate } from './file';
 import { getRootFolderToken, getOrCreateFolder } from './folder';
@@ -19,6 +21,14 @@ const pendingImageEdit = new Map<string, {
   savedPath: string;
   fileName: string;
   dateFolder: string;
+}>();
+
+/** 每用户待发布的小红书内容 */
+const pendingXhsPublish = new Map<string, {
+  title: string;
+  content: string;
+  tags: string[];
+  images: Buffer[];
 }>();
 
 /**
@@ -92,15 +102,83 @@ export async function handlePendingImageEditResponse(
   query: string
 ): Promise<boolean> {
   const userId = msg.senderId;
+
+  // 处理小红书发布确认/取消
+  if (pendingXhsPublish.has(userId)) {
+    const pending = pendingXhsPublish.get(userId)!;
+
+    if (/^(确认|发布|ok|yes|是)/i.test(query)) {
+      await channel.send(msg.chatId, {
+        text: `正在发布到小红书...`,
+      }, { replyTo: msg.messageId });
+
+      try {
+        const { XhsPublisher } = await import('../xhs');
+        const publisher = new XhsPublisher();
+        await publisher.init();
+
+        const result = await publisher.publish({
+          title: pending.title,
+          content: pending.content,
+          images: pending.images,
+          tags: pending.tags,
+        });
+
+        await publisher.close();
+
+        if (result.success) {
+          const replyLines = [
+            `✅ 小红书发布成功！`,
+            result.noteUrl ? `链接：${result.noteUrl}` : '',
+          ].filter(Boolean).join('\n');
+          await channel.send(msg.chatId, { text: replyLines }, { replyTo: msg.messageId });
+        } else {
+          await channel.send(msg.chatId, {
+            text: `❌ 发布失败：${result.error}\n要再试一次吗？`,
+          }, { replyTo: msg.messageId });
+        }
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        console.error(`[${userId}] 小红书发布失败:`, errMsg);
+        await channel.send(msg.chatId, {
+          text: `❌ 发布失败：${errMsg}`,
+        }, { replyTo: msg.messageId });
+      }
+
+      pendingXhsPublish.delete(userId);
+      return true;
+    }
+
+    if (/^(取消|放弃|cancel|no|否)/i.test(query)) {
+      pendingXhsPublish.delete(userId);
+      await channel.send(msg.chatId, { text: '已取消发布' }, { replyTo: msg.messageId });
+      return true;
+    }
+
+    // 如果用户回复了其他内容，提醒他们确认或取消
+    await channel.send(msg.chatId, {
+      text: `请回复「确认」发布，或「取消」放弃`,
+    }, { replyTo: msg.messageId });
+    return true;
+  }
+
   if (!pendingImageEdit.has(userId)) return false;
 
   const pending = pendingImageEdit.get(userId)!;
 
   // 匹配命令和可选的文字内容（如 "3 秋冬必备保温杯" 或 "封面 秋冬必备保温杯"）
-  const genMatch = query.match(/^(1|2|3|4|穿戴|商品|封面|详情|生成|tryon|product|cover|detail)\s*(.*)/i);
+  const genMatch = query.match(/^(1|2|3|4|5|穿戴|商品|封面|详情|生成|小红书发布|xhs|tryon|product|cover|detail)\s*(.*)/i);
   if (genMatch && pending.analysis) {
     const command = genMatch[1];
     const overlayText = genMatch[2]?.trim() || '';
+
+    // 小红书发布（特殊处理）
+    if (command === '5' || /小红书发布|xhs/i.test(command)) {
+      await handleXhsPublish(channel, msg, pending.buffer, pending.analysis);
+      pendingImageEdit.delete(userId);
+      return true;
+    }
+
     await handleImageGeneration(channel, msg, { buffer: pending.buffer, analysis: pending.analysis }, command, overlayText);
     pendingImageEdit.delete(userId);
     return true;
@@ -226,6 +304,7 @@ export async function handleImageMessage(
       replyLines.push(`2 商品图`);
       replyLines.push(`3 小红书封面（可加文字，如 3 秋冬必备保温杯）`);
       replyLines.push(`4 详情图套件（8张）`);
+      replyLines.push(`5 小红书发布`);
     }
     await channel.send(chatId, { text: replyLines.join('\n') }, { replyTo: msg.messageId });
   } catch (err) {
@@ -411,6 +490,115 @@ async function handleDetailSuite(
     console.error(`[${userId}] 详情图套件生成失败:`, errMsg);
     await channel.send(chatId, {
       text: `详情图生成失败：${errMsg}\n要再试一次吗？`,
+    }, { replyTo: msg.messageId });
+  }
+}
+
+/**
+ * 处理小红书发布请求
+ */
+async function handleXhsPublish(
+  channel: LarkChannel,
+  msg: NormalizedMessage,
+  imageBuffer: Buffer,
+  analysis: ImageAnalysis,
+): Promise<void> {
+  const userId = msg.senderId;
+  const chatId = msg.chatId;
+
+  console.log(`[${userId}] 开始小红书发布流程`);
+
+  // 发送进度消息
+  await channel.send(chatId, {
+    text: `正在生成小红书内容...\n分析产品中...`,
+  }, { replyTo: msg.messageId });
+
+  try {
+    // 1. 生成小红书内容
+    const productInfo = {
+      category: analysis.category,
+      material: analysis.attributes.material,
+      color: analysis.attributes.color,
+      style: analysis.attributes.style,
+      description: analysis.description,
+    };
+
+    const content = await generateXhsContent(productInfo, '种草');
+    console.log(`[${userId}] 内容生成完成: ${content.title}`);
+
+    // 2. 生成封面标题
+    const coverTitle = await generateCoverTitle(productInfo);
+    console.log(`[${userId}] 封面标题: ${coverTitle}`);
+
+    // 3. 生成带文字的封面图
+    let coverImage: Buffer;
+    try {
+      // 先生成封面图
+      const prompt = buildPrompt(analysis, 'cover', {});
+      const result = await generateImage(imageBuffer, prompt, { mode: 'cover' });
+
+      if (result.images.length > 0) {
+        // 叠加文字
+        coverImage = await addTextOverlay(result.images[0], {
+          text: coverTitle,
+          position: 'bottom',
+          fontSize: 48,
+        });
+      } else {
+        // 如果封面生成失败，用原图
+        coverImage = await addTextOverlay(imageBuffer, {
+          text: coverTitle,
+          position: 'bottom',
+          fontSize: 48,
+        });
+      }
+    } catch (coverErr) {
+      console.warn(`[${userId}] 封面生成失败，用原图:`, coverErr);
+      coverImage = await addTextOverlay(imageBuffer, {
+        text: coverTitle,
+        position: 'bottom',
+        fontSize: 48,
+      });
+    }
+
+    // 4. 发送预览给用户
+    const previewText = [
+      `📝 小红书笔记预览`,
+      ``,
+      `📌 标题：${content.title}`,
+      ``,
+      `📄 正文：`,
+      content.content.substring(0, 200) + (content.content.length > 200 ? '...' : ''),
+      ``,
+      `🏷️ 标签：${content.tags.map(t => `#${t}`).join(' ')}`,
+      ``,
+      `---`,
+      `确认发布？回复「确认」发布，或「取消」放弃`,
+    ].join('\n');
+
+    // 发送封面预览图
+    await channel.send(chatId, {
+      image: { source: coverImage },
+    }, { replyTo: msg.messageId });
+
+    // 发送内容预览
+    await channel.send(chatId, {
+      text: previewText,
+    }, { replyTo: msg.messageId });
+
+    // 5. 存储待发布状态
+    pendingXhsPublish.set(userId, {
+      title: content.title,
+      content: content.content,
+      tags: content.tags,
+      images: [coverImage, imageBuffer], // 封面图 + 原图
+    });
+
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.error(`[${userId}] 小红书内容生成失败:`, errMsg);
+    await channel.send(chatId, {
+      text: `内容生成失败：${errMsg}\n要再试一次吗？`,
     }, { replyTo: msg.messageId });
   }
 }

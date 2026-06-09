@@ -23,5 +23,6 @@ export const config = {
     replicateApiToken: process.env.REPLICATE_API_TOKEN || '',
     jimengApiKey: process.env.JIMENG_API_KEY || '',
     jimengApiSecret: process.env.JIMENG_API_SECRET || '',
+    comfyuiHost: process.env.COMFYUI_HOST || 'http://127.0.0.1:8188',
   },
 };

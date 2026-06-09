@@ -9,6 +9,7 @@ import type { ImageAnalysis, GenerateMode, GenerateParams, ImageProvider } from 
 import { JimengProvider } from './providers/jimeng';
 import { ReplicateProvider } from './providers/replicate';
 import { LibTVProvider } from './providers/libtv';
+import { ComfyUIProvider, isComfyAvailable } from './providers/comfyui';
 
 /** 用户意图解析结果 */
 export interface ImageGenIntent {
@@ -19,11 +20,22 @@ export interface ImageGenIntent {
   numImages?: number;    // 生成数量
 }
 
+/** ComfyUI 可用性缓存 */
+let comfyAvailable: boolean | null = null;
+
 /** 初始化可用的 Provider */
-function getProviders(): ImageProvider[] {
+async function getProviders(): Promise<ImageProvider[]> {
   const providers: ImageProvider[] = [];
 
-  // LibTV（最高优先级，VIP 可用）
+  // ComfyUI（最高优先级，本地免费）
+  if (comfyAvailable === null) {
+    comfyAvailable = await isComfyAvailable();
+  }
+  if (comfyAvailable) {
+    providers.push(new ComfyUIProvider());
+  }
+
+  // LibTV（VIP 可用）
   providers.push(new LibTVProvider());
 
   // 即梦（备用）
@@ -40,14 +52,18 @@ function getProviders(): ImageProvider[] {
 /**
  * 选择最佳 Provider
  *
- * 优先级：LibTV > 即梦 > Replicate
+ * 优先级：ComfyUI（本地免费）> LibTV > 即梦 > Replicate
  */
-function selectProvider(mode: GenerateMode): ImageProvider {
-  const providers = getProviders();
+async function selectProvider(mode: GenerateMode): Promise<ImageProvider> {
+  const providers = await getProviders();
 
   if (providers.length === 0) {
-    throw new Error('没有可用的图片生成服务。请配置 libtv CLI 或 REPLICATE_API_TOKEN。');
+    throw new Error('没有可用的图片生成服务。请配置 libtv CLI、ComfyUI 或 REPLICATE_API_TOKEN。');
   }
+
+  // ComfyUI 最高优先级（本地免费，无 API 费用）
+  const comfy = providers.find(p => p.name === 'comfyui');
+  if (comfy) return comfy;
 
   // LibTV 优先（VIP 可用，质量好）
   const libtv = providers.find(p => p.name === 'libtv');
@@ -146,7 +162,7 @@ export async function generateImage(
   prompt: string,
   intent: ImageGenIntent,
 ): Promise<{ images: Buffer[]; provider: string }> {
-  const provider = selectProvider(intent.mode);
+  const provider = await selectProvider(intent.mode);
   const params = buildGenerateParams(imageBuffer, prompt, intent);
 
   console.log(`[ImageGen] 使用 ${provider.name} 生成，模式: ${intent.mode}`);

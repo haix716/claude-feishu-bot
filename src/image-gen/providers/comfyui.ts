@@ -1,17 +1,19 @@
 /**
- * ComfyUI 集成模块
+ * ComfyUI Provider
  *
  * 通过 @saintno/comfyui-sdk 连接本地 ComfyUI 服务器
- * 用于详情图套件的图片生成、调色、校验
+ * 支持 txt2img 和 img2img 两种模式
+ * 优先级最高（本地免费，无 API 费用）
  */
 
 import { ComfyApi } from '@saintno/comfyui-sdk';
 import path from 'path';
 import fs from 'fs';
+import type { ImageProvider, GenerateParams, GenerateResult, GenerateMode } from './provider';
 
 // 配置
 const COMFYUI_HOST = process.env.COMFYUI_HOST || 'http://127.0.0.1:8188';
-const WORKFLOW_DIR = path.join(__dirname, 'workflows');
+const WORKFLOW_DIR = path.join(__dirname, '..', '..', 'workflows');
 
 // 全局客户端（单例）
 let comfyApi: ComfyApi | null = null;
@@ -19,7 +21,7 @@ let comfyApi: ComfyApi | null = null;
 /**
  * 获取 ComfyUI 客户端
  */
-export function getComfyApi(): ComfyApi {
+function getComfyApi(): ComfyApi {
   if (!comfyApi) {
     comfyApi = new ComfyApi(COMFYUI_HOST);
   }
@@ -29,31 +31,18 @@ export function getComfyApi(): ComfyApi {
 /**
  * 等待 ComfyUI 就绪
  */
-export async function waitForComfyReady(): Promise<ComfyApi> {
+async function waitForComfyReady(): Promise<ComfyApi> {
   const api = getComfyApi();
   await api.init(5, 2000).waitForReady();
   return api;
 }
 
 /**
- * 检查 ComfyUI 是否可用
- */
-export async function isComfyAvailable(): Promise<boolean> {
-  try {
-    const api = getComfyApi();
-    await api.init(3, 1000).waitForReady();
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
  * 上传图片到 ComfyUI
  */
-export async function uploadImage(
+async function uploadImage(
   buffer: Buffer,
-  fileName: string
+  fileName: string,
 ): Promise<{ filename: string; subfolder: string; type: string }> {
   const api = await waitForComfyReady();
   const result = await api.uploadImage(buffer, fileName);
@@ -66,7 +55,7 @@ export async function uploadImage(
 /**
  * 下载 ComfyUI 生成的图片
  */
-export async function downloadImage(imageInfo: {
+async function downloadImage(imageInfo: {
   filename: string;
   subfolder: string;
   type: string;
@@ -79,7 +68,7 @@ export async function downloadImage(imageInfo: {
 /**
  * 加载工作流 JSON
  */
-export function loadWorkflow(name: string): Record<string, Record<string, unknown>> {
+function loadWorkflow(name: string): Record<string, Record<string, unknown>> {
   const filePath = path.join(WORKFLOW_DIR, `${name}.json`);
   if (!fs.existsSync(filePath)) {
     throw new Error(`工作流文件不存在: ${filePath}`);
@@ -127,15 +116,11 @@ function waitForResult(promptId: string): Promise<Array<{ filename: string; subf
 }
 
 /**
- * 通用图片生成接口
- *
- * @param workflowName 工作流名称（对应 workflows/ 目录下的 JSON 文件）
- * @param inputs 输入参数（会覆盖工作流中的默认值）
- * @returns 生成的图片 Buffer 数组
+ * 通用图片生成
  */
-export async function generate(
+async function generate(
   workflowName: string,
-  inputs: Record<string, unknown>
+  inputs: Record<string, unknown>,
 ): Promise<Buffer[]> {
   const api = await waitForComfyReady();
   const workflow = loadWorkflow(workflowName);
@@ -173,6 +158,69 @@ export async function generate(
   }
 
   return images;
+}
+
+/**
+ * ComfyUI Provider
+ *
+ * 实现 ImageProvider 接口，支持 txt2img 和 img2img
+ */
+export class ComfyUIProvider implements ImageProvider {
+  readonly name = 'comfyui';
+
+  supports(_mode: GenerateMode): boolean {
+    // ComfyUI 支持所有模式（通过不同工作流）
+    return true;
+  }
+
+  async generateImage(params: GenerateParams): Promise<GenerateResult> {
+    const { referenceImage, prompt } = params;
+
+    if (referenceImage) {
+      // img2img：上传参考图 + 提示词
+      return this.img2img(referenceImage, prompt);
+    } else {
+      // txt2img：纯文本生成
+      return this.txt2img(prompt);
+    }
+  }
+
+  /**
+   * 文生图
+   */
+  private async txt2img(prompt: string): Promise<GenerateResult> {
+    const images = await generate('txt2img', {
+      '6.text': prompt,
+    });
+    return { images };
+  }
+
+  /**
+   * 图生图（上传参考图 + 提示词）
+   */
+  private async img2img(referenceImage: Buffer, prompt: string): Promise<GenerateResult> {
+    // 上传参考图
+    const uploadResult = await uploadImage(referenceImage, `ref_${Date.now()}.png`);
+
+    const images = await generate('img2img', {
+      '10.image': uploadResult.filename,
+      '6.text': prompt,
+    });
+    return { images };
+  }
+}
+
+/**
+ * 检查 ComfyUI 是否可用
+ */
+export async function isComfyAvailable(): Promise<boolean> {
+  try {
+    const api = getComfyApi();
+    await api.init(3, 1000).waitForReady();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**

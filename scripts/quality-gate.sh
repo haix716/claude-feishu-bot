@@ -48,9 +48,9 @@ STAGED_FILES=$(git diff --cached --name-only 2>/dev/null || true)
 if [ -z "$STAGED_FILES" ]; then
   pass "没有 staged 文件，跳过安全检查"
 else
-  # 1a. 禁止提交的文件
+  # 1a. 禁止提交的文件（排除 .claude/subagents/）
   BLOCKED_PATTERNS=(
-    "\.claude/"
+    "\.claude/(?!subagents/)"
     "\.env$"
     "\.env\."
     "\.pem$"

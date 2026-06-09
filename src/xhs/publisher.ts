@@ -116,6 +116,7 @@ export class XhsPublisher {
     const page = await this.context!.newPage();
     try {
       // 打开小红书创作者中心登录页
+      console.log('[XHS] 打开登录页...');
       await page.goto('https://creator.xiaohongshu.com/login', {
         waitUntil: 'networkidle',
         timeout: 30000,
@@ -130,28 +131,52 @@ export class XhsPublisher {
 
       if (qrImg) {
         qrCodeUrl = await qrImg.getAttribute('src') || undefined;
+        console.log('[XHS] 二维码已显示');
+      } else {
+        console.log('[XHS] 未找到二维码元素');
       }
 
       // 等待用户扫码完成（最多 120 秒）
-      console.log('[XHS] 等待扫码登录...');
+      console.log('[XHS] 等待扫码登录...（120秒超时）');
 
-      try {
-        // 等待页面跳转到创作者中心
-        await page.waitForURL('**/publish/**', { timeout: 120000 });
-        console.log('[XHS] 登录成功！');
+      // 轮询检查登录状态（每2秒检查一次）
+      for (let i = 0; i < 60; i++) {
+        await page.waitForTimeout(2000);
 
-        // 保存 Cookie
-        const cookies = await this.context!.cookies();
-        this.saveCookies(cookies);
+        const url = page.url();
+        console.log(`[XHS] 检查登录状态 (${i + 1}/60), 当前URL: ${url}`);
 
-        return { success: true };
-      } catch {
-        return {
-          success: false,
-          qrCodeUrl,
-          error: '扫码超时（120秒），请重试',
-        };
+        // 如果不在登录页了，说明登录成功
+        if (!url.includes('login') && !url.includes('passport')) {
+          console.log('[XHS] 登录成功！');
+
+          // 保存 Cookie
+          const cookies = await this.context!.cookies();
+          this.saveCookies(cookies);
+
+          return { success: true };
+        }
+
+        // 检查是否有登录成功的迹象（如页面内容变化）
+        try {
+          const isLoggedIn = await page.evaluate(() => {
+            // 检查是否有创作者中心的元素
+            return !!document.querySelector('[class*="publish"], [class*="creator"], [class*="dashboard"]');
+          });
+          if (isLoggedIn) {
+            console.log('[XHS] 检测到创作者中心元素，登录成功！');
+            const cookies = await this.context!.cookies();
+            this.saveCookies(cookies);
+            return { success: true };
+          }
+        } catch { /* ignore */ }
       }
+
+      return {
+        success: false,
+        qrCodeUrl,
+        error: '扫码超时（120秒），请确认已扫码并点击确认登录',
+      };
     } catch (err) {
       return {
         success: false,

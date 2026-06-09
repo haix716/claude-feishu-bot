@@ -30,7 +30,7 @@ export async function analyzeImageForGeneration(base64Image: string): Promise<Im
 {
   "contentType": "clothing 或 product 或 accessory 或 other",
   "category": "具体品类，如 T恤、保温杯、项链、手机壳",
-  "description": "用中文描述图片内容，100字以内",
+  "description": "用中文描述图片内容，20字以内，简洁明了",
   "fileName": "用中文生成一个简短的文件名，12个字以内，不要包含特殊字符和空格",
   "color": "主要颜色",
   "material": "材质，如 棉、不锈钢、皮革、塑料",
@@ -41,10 +41,11 @@ export async function analyzeImageForGeneration(base64Image: string): Promise<Im
 }
 
 规则：
-- contentType：衣服、裤子、裙子、外套等穿在身上的东西 → clothing；包、手机壳、杯子等商品 → product；项链、戒指、手表等配饰 → accessory；其他 → other
+- contentType：衣服、裤子、裙子、外套等穿在身上的东西 → clothing；包、手机壳、杯子等商品 → product；项链、戒指、手镯、耳环等配饰 → accessory；其他 → other
 - suggestedMode：clothing 类型默认 tryon；product 类型默认 product；都可以做 cover
-- description：简洁的中文描述，适合用户快速了解图片内容
+- description：20字以内的简洁中文描述，只说核心内容
 - fileName：简短的中文文件名，用于保存图片
+- material：银色首饰（项链、手镯、戒指、耳环等）材质填"银"，不要填"不锈钢"或"金属"
 - englishPrompt 要详细、具体，适合直接用于 AI 图片生成模型`
         },
         {

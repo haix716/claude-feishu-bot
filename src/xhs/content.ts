@@ -38,6 +38,9 @@ export async function generateXhsContent(
   },
   style: '种草' | '测评' | '教程' | '日常' = '种草',
 ): Promise<XhsContent> {
+  // 如果材质是银，强制修正为银材质
+  const material = productInfo.material === '银' ? '银' : productInfo.material;
+
   const response = await openai.chat.completions.create({
     model: config.ai.model,
     messages: [{
@@ -46,7 +49,7 @@ export async function generateXhsContent(
 
 产品信息：
 - 品类：${productInfo.category}
-- 材质：${productInfo.material}
+- 材质：${material}
 - 颜色：${productInfo.color}
 - 风格：${productInfo.style}
 ${productInfo.craftsmanship ? `- 工艺：${productInfo.craftsmanship}` : ''}
@@ -58,8 +61,13 @@ ${productInfo.description ? `- 产品描述：${productInfo.description}` : ''}
 
 要求：
 1. 标题：20字以内，带emoji，吸引眼球，有"种草感"
-2. 正文：300-500字，口语化，像朋友推荐一样自然，带emoji分段
+2. 正文：150-250字，口语化，像朋友推荐一样自然，带emoji分段
 3. 标签：5-8个相关话题标签
+
+重要规则：
+- 材质必须写"银"或"925银"，绝对不能写"不锈钢"、"金属"、"合金"
+- 如果产品是银饰，强调"纯银"、"925银"、"银饰"等关键词
+- 不要使用"不锈钢"、"钢"、"金属"等词
 
 返回 JSON 格式：
 {

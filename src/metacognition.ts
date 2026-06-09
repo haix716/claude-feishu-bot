@@ -2,8 +2,9 @@
  * 元认知系统集成模块
  *
  * 连接飞书助手（执行层）和元认知系统（学习层）
- * - 读取元认知系统的洞察，供 AI 回复时参考
+ * - 读取元认知系统的洞察，供 AI 回复时参考（带缓存）
  * - 记录用户反馈，回流到元认知系统
+ * - 推送每日洞察到飞书
  */
 
 import fs from 'fs';
@@ -33,8 +34,19 @@ interface Insight {
   extractedAt: string;
 }
 
+// ==================== 缓存机制 ====================
+
+/** 缓存的元认知上下文 */
+let cachedContext: string | null = null;
+
+/** 缓存时间 */
+let cachedAt: number = 0;
+
+/** 缓存有效期（1 小时） */
+const CACHE_TTL = 60 * 60 * 1000;
+
 /**
- * 读取最近的高价值洞察
+ * 读取最近的高价值洞察（带缓存）
  */
 export function getRecentInsights(
   minScore: number = 7,
@@ -93,12 +105,41 @@ export function getLatestReflection(): string | null {
 }
 
 /**
- * 生成元认知上下文（用于 AI 回复时参考）
+ * 读取最新的日报
+ */
+export function getLatestDigest(): string | null {
+  const digestDir = path.join(METACOGNITION_BASE, 'digest');
+  if (!fs.existsSync(digestDir)) {
+    return null;
+  }
+
+  const files = fs.readdirSync(digestDir)
+    .filter(f => f.startsWith('daily-') && f.endsWith('.md'))
+    .sort()
+    .reverse();
+
+  if (files.length === 0) return null;
+
+  return fs.readFileSync(path.join(digestDir, files[0]), 'utf-8');
+}
+
+/**
+ * 生成元认知上下文（带缓存，1 小时刷新）
  */
 export function generateMetacognitionContext(): string {
+  const now = Date.now();
+
+  // 缓存命中
+  if (cachedContext && (now - cachedAt) < CACHE_TTL) {
+    return cachedContext;
+  }
+
+  // 重新生成
   const insights = getRecentInsights(8, 5);
 
   if (insights.length === 0) {
+    cachedContext = '';
+    cachedAt = now;
     return '';
   }
 
@@ -108,14 +149,63 @@ export function generateMetacognitionContext(): string {
     context += `- [${insight.domain}] ${insight.insight}\n`;
   }
 
+  cachedContext = context;
+  cachedAt = now;
+
+  console.log(`[元认知] 缓存已更新，${insights.length} 条洞察`);
   return context;
 }
 
 /**
+ * 强制刷新缓存
+ */
+export function refreshCache(): void {
+  cachedContext = null;
+  cachedAt = 0;
+  generateMetacognitionContext();
+}
+
+/**
+ * 生成每日洞察摘要（用于推送到飞书）
+ */
+export function generateDailyInsightSummary(): string {
+  const insights = getRecentInsights(7, 10);
+  const date = new Date().toISOString().split('T')[0];
+
+  if (insights.length === 0) {
+    return `🧠 元认知日报 ${date}\n\n今天没有新的高价值洞察。`;
+  }
+
+  // 按领域分组
+  const byDomain = new Map<string, Insight[]>();
+  for (const insight of insights) {
+    const existing = byDomain.get(insight.domain) || [];
+    existing.push(insight);
+    byDomain.set(insight.domain, existing);
+  }
+
+  let summary = `🧠 元认知日报 ${date}\n\n`;
+  summary += `📊 今日采集 ${insights.length} 条高价值洞察，覆盖 ${byDomain.size} 个领域\n\n`;
+
+  // Top 5 洞察
+  summary += '📌 Top 5 洞察：\n';
+  const top5 = insights.slice(0, 5);
+  for (let i = 0; i < top5.length; i++) {
+    const insight = top5[i];
+    summary += `${i + 1}. [${insight.domain}] ${insight.insight}（${insight.score}分）\n`;
+  }
+
+  // 领域分布
+  summary += '\n📈 领域分布：\n';
+  for (const [domain, items] of byDomain) {
+    summary += `- ${domain}：${items.length} 条\n`;
+  }
+
+  return summary;
+}
+
+/**
  * 记录用户反馈到元认知系统
- *
- * 当用户对 AI 回复给出反馈时，记录到元认知系统
- * 用于后续反思和改进
  */
 export function recordFeedback(
   userId: string,
@@ -124,7 +214,6 @@ export function recordFeedback(
   feedback: 'positive' | 'negative' | 'neutral',
   comment?: string,
 ): void {
-  // 确保反馈目录存在
   if (!fs.existsSync(FEEDBACK_DIR)) {
     fs.mkdirSync(FEEDBACK_DIR, { recursive: true });
   }

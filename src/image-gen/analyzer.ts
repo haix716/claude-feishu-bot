@@ -59,13 +59,23 @@ export async function analyzeImageForGeneration(base64Image: string): Promise<Im
   const content = response.choices[0]?.message?.content || '';
 
   try {
-    // 尝试从回复中提取 JSON
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
+    // 提取 JSON（支持 markdown 代码块和裸 JSON）
+    let jsonStr = '';
+    const codeBlockMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (codeBlockMatch) {
+      jsonStr = codeBlockMatch[1].trim();
+    } else {
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        jsonStr = jsonMatch[0];
+      }
+    }
+
+    if (!jsonStr) {
       throw new Error('无法从回复中提取 JSON');
     }
 
-    const data = JSON.parse(jsonMatch[0]);
+    const data = JSON.parse(jsonStr);
 
     return {
       contentType: validateContentType(data.contentType),

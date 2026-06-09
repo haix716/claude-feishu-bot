@@ -76,10 +76,20 @@ ${productInfo.description ? `- 产品描述：${productInfo.description}` : ''}
   const text = response.choices[0]?.message?.content || '';
 
   try {
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('无法提取 JSON');
+    // 提取 JSON（支持 markdown 代码块和裸 JSON）
+    let jsonStr = '';
+    const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (codeBlockMatch) {
+      jsonStr = codeBlockMatch[1].trim();
+    } else {
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        jsonStr = jsonMatch[0];
+      }
+    }
 
-    const data = JSON.parse(jsonMatch[0]);
+    if (!jsonStr) throw new Error('无法提取 JSON');
+    const data = JSON.parse(jsonStr);
 
     return {
       title: (data.title || productInfo.category).substring(0, 20),

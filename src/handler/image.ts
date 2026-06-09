@@ -302,7 +302,7 @@ export async function handleImageMessage(
       replyLines.push(`\n要处理的话回复：`);
       replyLines.push(`1 穿戴效果图`);
       replyLines.push(`2 商品图`);
-      replyLines.push(`3 小红书封面（可加文字，如 3 秋冬必备保温杯）`);
+      replyLines.push(`3 小红书封面（可加文字，如 3 银莲蓬手链超好看）`);
       replyLines.push(`4 详情图套件（8张）`);
       replyLines.push(`5 小红书发布`);
     }

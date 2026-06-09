@@ -83,6 +83,7 @@ export class XhsPublisher {
 
     const page = await this.context!.newPage();
     try {
+      console.log('[XHS] 检查登录状态...');
       await page.goto('https://creator.xiaohongshu.com/publish/publish', {
         waitUntil: 'networkidle',
         timeout: 15000,
@@ -90,12 +91,16 @@ export class XhsPublisher {
 
       // 如果跳转到登录页，说明未登录
       const url = page.url();
+      console.log('[XHS] 当前页面:', url);
       if (url.includes('login') || url.includes('passport')) {
+        console.log('[XHS] 未登录（跳转到登录页）');
         return false;
       }
 
+      console.log('[XHS] 已登录');
       return true;
-    } catch {
+    } catch (err) {
+      console.error('[XHS] 检查登录状态失败:', err);
       return false;
     } finally {
       await page.close();
@@ -338,11 +343,12 @@ export class XhsPublisher {
    */
   private saveCookies(cookies: any[]): void {
     try {
+      console.log(`[XHS] 保存 ${cookies.length} 个 Cookie 到 ${COOKIE_FILE}`);
       if (!fs.existsSync(COOKIE_DIR)) {
         fs.mkdirSync(COOKIE_DIR, { recursive: true });
       }
       fs.writeFileSync(COOKIE_FILE, JSON.stringify(cookies, null, 2));
-      console.log('[XHS] Cookie 已保存');
+      console.log('[XHS] Cookie 已保存成功');
     } catch (err) {
       console.error('[XHS] 保存 Cookie 失败:', err);
     }

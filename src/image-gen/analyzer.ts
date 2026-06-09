@@ -53,10 +53,15 @@ export async function analyzeImageForGeneration(base64Image: string): Promise<Im
         },
       ],
     }],
-    max_completion_tokens: 600,
+    max_completion_tokens: 1500,
   });
 
   const content = response.choices[0]?.message?.content || '';
+  console.log('[Analyzer] 模型返回:', content.substring(0, 200));
+
+  if (!content) {
+    console.error('[Analyzer] 模型返回空内容');
+  }
 
   try {
     // 提取 JSON（支持 markdown 代码块和裸 JSON）
@@ -72,7 +77,7 @@ export async function analyzeImageForGeneration(base64Image: string): Promise<Im
     }
 
     if (!jsonStr) {
-      throw new Error('无法从回复中提取 JSON');
+      throw new Error(`无法从回复中提取 JSON: ${content.substring(0, 100)}`);
     }
 
     const data = JSON.parse(jsonStr);

@@ -70,10 +70,16 @@ ${productInfo.description ? `- 产品描述：${productInfo.description}` : ''}
 
 只输出 JSON，不要其他内容。`
     }],
-    max_completion_tokens: 800,
+    max_completion_tokens: 2000,
   });
 
   const text = response.choices[0]?.message?.content || '';
+  console.log('[XHS Content] 模型返回:', text.substring(0, 200));
+
+  if (!text) {
+    console.error('[XHS Content] 模型返回空内容');
+    throw new Error('模型返回空内容');
+  }
 
   try {
     // 提取 JSON（支持 markdown 代码块和裸 JSON）
@@ -88,7 +94,7 @@ ${productInfo.description ? `- 产品描述：${productInfo.description}` : ''}
       }
     }
 
-    if (!jsonStr) throw new Error('无法提取 JSON');
+    if (!jsonStr) throw new Error(`无法从回复中提取 JSON: ${text.substring(0, 100)}`);
     const data = JSON.parse(jsonStr);
 
     return {

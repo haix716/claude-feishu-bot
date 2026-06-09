@@ -259,8 +259,8 @@ src/
 
 ### 角色定义
 - **PM（主 agent）**：需求分析、任务拆分、写 task brief、监控进度、合并交付
-- **Developer（`.claude/agents/developer.md`）**：写代码、跑测试、提交
-- **Reviewer（`.claude/agents/reviewer.md`）**：审查代码，只读不写
+- **Developer（`.claude/subagents/developer.md`）**：写代码、跑测试、提交
+- **Reviewer（`.claude/subagents/reviewer.md`）**：审查代码，只读不写
 
 ### 工作流程
 1. PM 理解需求，拆分为独立任务

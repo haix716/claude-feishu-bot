@@ -7,7 +7,7 @@ dist/
 images/
 src/data/index.json
 .claude/*
-!.claude/agents/
+!.claude/subagents/
 
 # LibTV CLI local config
 .libtv/

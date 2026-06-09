@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import { larkService } from './lark';
 import { config } from './config';
+import { generateDailyInsightSummary } from './metacognition';
 
 /** 匹配 {yyyyMMdd}(待处理) 格式的文件夹名 */
 const PENDING_FOLDER_PATTERN = /^\{(\d{8})\}\(待处理\)$/;
@@ -15,7 +16,42 @@ export function startScheduler(): void {
     await cleanupEmptyFolders();
   });
 
-  console.log('📅 定时任务已启动（每天 02:00 清理空文件夹）');
+  // 每日洞察推送（默认 08:00，可通过 DAILY_PUSH_HOUR 配置）
+  const pushHour = config.dailyPush.hour;
+  cron.schedule(`0 ${pushHour} * * *`, async () => {
+    console.log(`⏰ 执行定时任务：每日洞察推送（${pushHour}:00）`);
+    await pushDailyInsight();
+  });
+
+  console.log(`📅 定时任务已启动（每天 02:00 清理空文件夹，${pushHour}:00 每日洞察推送）`);
+}
+
+/**
+ * 推送每日洞察摘要到飞书
+ */
+async function pushDailyInsight(): Promise<void> {
+  try {
+    const userId = config.dailyPush.userId;
+    if (!userId) {
+      console.log('⚠️ 未配置 DAILY_PUSH_USER_ID，跳过每日推送');
+      return;
+    }
+
+    const summary = generateDailyInsightSummary();
+    if (!summary) {
+      console.log('⚠️ 无洞察数据，跳过推送');
+      return;
+    }
+
+    const success = await larkService.sendMessage(userId, summary);
+    if (success) {
+      console.log('✅ 每日洞察推送成功');
+    } else {
+      console.error('❌ 每日洞察推送失败');
+    }
+  } catch (err) {
+    console.error('❌ 每日洞察推送异常:', err);
+  }
 }
 
 /**

@@ -494,6 +494,29 @@ class LarkService {
     return resp.data.data?.file_token || '';
   }
 
+  /** 主动发送消息给用户（用于每日推送等场景） */
+  async sendMessage(userId: string, text: string): Promise<boolean> {
+    try {
+      const resp = await this.client.im.message.create({
+        params: { receive_id_type: 'open_id' },
+        data: {
+          receive_id: userId,
+          msg_type: 'text',
+          content: JSON.stringify({ text }),
+        },
+      });
+      if (resp.code === 0) {
+        console.log(`[sendMessage] 消息发送成功: userId=${userId}`);
+        return true;
+      }
+      console.error(`[sendMessage] 发送失败: ${resp.msg}`);
+      return false;
+    } catch (err) {
+      console.error('[sendMessage] 发送失败:', err);
+      return false;
+    }
+  }
+
   /** 使用用户身份创建文件夹 */
   async createFolderWithUserToken(
     userAccessToken: string,

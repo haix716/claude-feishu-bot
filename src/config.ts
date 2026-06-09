@@ -32,4 +32,8 @@ export const config = {
     jimengApiSecret: process.env.JIMENG_API_SECRET || '',
     comfyuiHost: process.env.COMFYUI_HOST || 'http://127.0.0.1:8188',
   },
+  dailyPush: {
+    userId: process.env.DAILY_PUSH_USER_ID || '',
+    hour: parseInt(process.env.DAILY_PUSH_HOUR || '8'),
+  },
 };

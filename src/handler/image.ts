@@ -530,35 +530,19 @@ async function handleXhsPublish(
     const coverTitle = await generateCoverTitle(productInfo);
     console.log(`[${userId}] 封面标题: ${coverTitle}`);
 
-    // 3. 生成带文字的封面图
+    // 3. 在原图上叠加封面标题
+    console.log(`[${userId}] 生成封面图（原图+文字叠加）`);
     let coverImage: Buffer;
     try {
-      // 先生成封面图
-      const prompt = buildPrompt(analysis, 'cover', {});
-      const result = await generateImage(imageBuffer, prompt, { mode: 'cover' });
-
-      if (result.images.length > 0) {
-        // 叠加文字
-        coverImage = await addTextOverlay(result.images[0], {
-          text: coverTitle,
-          position: 'bottom',
-          fontSize: 48,
-        });
-      } else {
-        // 如果封面生成失败，用原图
-        coverImage = await addTextOverlay(imageBuffer, {
-          text: coverTitle,
-          position: 'bottom',
-          fontSize: 48,
-        });
-      }
-    } catch (coverErr) {
-      console.warn(`[${userId}] 封面生成失败，用原图:`, coverErr);
       coverImage = await addTextOverlay(imageBuffer, {
         text: coverTitle,
         position: 'bottom',
         fontSize: 48,
       });
+      console.log(`[${userId}] 封面图生成完成`);
+    } catch (overlayErr) {
+      console.warn(`[${userId}] 文字叠加失败，用原图:`, overlayErr);
+      coverImage = imageBuffer;
     }
 
     // 4. 发送预览给用户

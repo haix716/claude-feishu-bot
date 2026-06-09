@@ -118,7 +118,7 @@ export class XhsPublisher {
       // 打开小红书创作者中心登录页
       console.log('[XHS] 打开登录页...');
       await page.goto('https://creator.xiaohongshu.com/login', {
-        waitUntil: 'networkidle',
+        waitUntil: 'domcontentloaded',
         timeout: 30000,
       });
 
@@ -197,8 +197,8 @@ export class XhsPublisher {
     try {
       console.log('[XHS] 打开发布页面...');
       await page.goto('https://creator.xiaohongshu.com/publish/publish', {
-        waitUntil: 'networkidle',
-        timeout: 30000,
+        waitUntil: 'domcontentloaded',
+        timeout: 60000,
       });
 
       // 等待页面加载

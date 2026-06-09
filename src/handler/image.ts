@@ -117,25 +117,22 @@ export async function handlePendingImageEditResponse(
         const publisher = new XhsPublisher();
         await publisher.init();
 
-        // 检查登录状态，未登录则触发登录
-        const loggedIn = await publisher.isLoggedIn();
-        if (!loggedIn) {
-          console.log(`[${userId}] 未登录，启动扫码登录流程`);
-          await channel.send(msg.chatId, {
-            text: `需要登录小红书，请在弹出的浏览器窗口中扫码登录...\n（登录后会自动继续发布）`,
-          }, { replyTo: msg.messageId });
+        // 直接尝试登录（如果已登录会自动跳过）
+        console.log(`[${userId}] 启动登录流程`);
+        await channel.send(msg.chatId, {
+          text: `请在弹出的浏览器窗口中扫码登录小红书...\n（已登录会自动跳过）`,
+        }, { replyTo: msg.messageId });
 
-          const loginResult = await publisher.login();
-          if (!loginResult.success) {
-            await publisher.close();
-            await channel.send(msg.chatId, {
-              text: `❌ 登录失败：${loginResult.error}\n要再试一次吗？`,
-            }, { replyTo: msg.messageId });
-            pendingXhsPublish.delete(userId);
-            return true;
-          }
-          console.log(`[${userId}] 登录成功，继续发布`);
+        const loginResult = await publisher.login();
+        if (!loginResult.success) {
+          await publisher.close();
+          await channel.send(msg.chatId, {
+            text: `❌ 登录失败：${loginResult.error}\n要再试一次吗？`,
+          }, { replyTo: msg.messageId });
+          pendingXhsPublish.delete(userId);
+          return true;
         }
+        console.log(`[${userId}] 登录成功，开始发布`);
 
         // 发布
         await channel.send(msg.chatId, {

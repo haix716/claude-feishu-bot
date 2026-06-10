@@ -1,7 +1,7 @@
 import cron from 'node-cron';
 import { larkService } from './lark';
 import { config } from './config';
-import { generateDailyInsightSummary } from './metacognition';
+import { generateDailyInsightSummary, generateDailyPushElements } from './metacognition';
 
 /** 匹配 {yyyyMMdd}(待处理) 格式的文件夹名 */
 const PENDING_FOLDER_PATTERN = /^\{(\d{8})\}\(待处理\)$/;
@@ -27,7 +27,7 @@ export function startScheduler(): void {
 }
 
 /**
- * 推送每日洞察摘要到飞书
+ * 推送每日洞察摘要到飞书（卡片消息格式）
  */
 async function pushDailyInsight(): Promise<void> {
   try {
@@ -37,13 +37,14 @@ async function pushDailyInsight(): Promise<void> {
       return;
     }
 
-    const summary = generateDailyInsightSummary();
-    if (!summary) {
+    const elements = generateDailyPushElements();
+    if (!elements || elements.length === 0) {
       console.log('⚠️ 无洞察数据，跳过推送');
       return;
     }
 
-    const success = await larkService.sendMessage(userId, summary);
+    const date = new Date().toISOString().split('T')[0];
+    const success = await larkService.sendCardMessage(userId, `🧠 元认知日报 ${date}`, elements);
     if (success) {
       console.log('✅ 每日洞察推送成功');
     } else {

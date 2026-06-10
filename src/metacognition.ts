@@ -205,6 +205,47 @@ export function generateDailyInsightSummary(): string {
 }
 
 /**
+ * 生成每日推送的卡片元素（昨天的格式）
+ */
+export function generateDailyPushElements(): Array<{ content: string; text_size?: string }> {
+  const insights = getRecentInsights(7, 10);
+  const elements: Array<{ content: string; text_size?: string }> = [];
+
+  if (insights.length === 0) {
+    elements.push({ content: '今天没有新的高价值洞察。' });
+    return elements;
+  }
+
+  // 为每条洞察生成内容
+  const emojis = ['🚀', '🎮', '📐', '🔧', '💡', '🎯', '🌟', '🔮'];
+  insights.forEach((insight, index) => {
+    const emoji = emojis[index % emojis.length];
+    const title = insight.insight.split(/[。！\n]/)[0];
+
+    elements.push({
+      text_size: 'heading-3',
+      content: `**${index + 1}. ${emoji} ${title}**`,
+    });
+
+    elements.push({ content: insight.insight });
+
+    if (index < insights.length - 1) {
+      elements.push({ content: '---' });
+    }
+  });
+
+  // 分割线
+  elements.push({ content: '---' });
+
+  // 总结
+  elements.push({
+    content: '总体来看，AI 行业正从**技术研发**、**商业落地**、**资本运作**和**基础设施建设**等多个维度快速发展。你对哪条新闻比较感兴趣？我可以帮你进一步了解。',
+  });
+
+  return elements;
+}
+
+/**
  * 记录用户反馈到元认知系统
  */
 export function recordFeedback(

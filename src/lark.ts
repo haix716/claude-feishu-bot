@@ -600,6 +600,50 @@ class LarkService {
     }
     return resp.data.data?.token || '';
   }
+
+  /** 发送卡片消息（支持 markdown 格式：粗体、分割线等） */
+  async sendCardMessage(userId: string, title: string, content: string | Array<{ content: string; text_size?: string }>, template: string = 'purple'): Promise<boolean> {
+    try {
+      // 支持多个 markdown 元素，每个元素可以有自己的字号
+      let elements: any[];
+      if (Array.isArray(content)) {
+        elements = content.map(item => ({
+          tag: 'markdown',
+          content: item.content,
+          ...(item.text_size ? { text_size: item.text_size } : {}),
+        }));
+      } else {
+        elements = [{ tag: 'markdown', content }];
+      }
+
+      const card = {
+        config: { wide_screen_mode: true },
+        header: {
+          title: { tag: 'plain_text', content: title },
+          template: template,
+        },
+        elements,
+      };
+
+      const resp = await this.client.im.message.create({
+        params: { receive_id_type: 'open_id' },
+        data: {
+          receive_id: userId,
+          msg_type: 'interactive',
+          content: JSON.stringify(card),
+        },
+      });
+      if (resp.code === 0) {
+        console.log(`[sendCardMessage] 消息发送成功: userId=${userId}`);
+        return true;
+      }
+      console.error(`[sendCardMessage] 发送失败: ${resp.msg}`);
+      return false;
+    } catch (err) {
+      console.error('[sendCardMessage] 发送失败:', err);
+      return false;
+    }
+  }
 }
 
 

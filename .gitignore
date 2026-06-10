@@ -11,3 +11,6 @@ src/data/index.json
 
 # LibTV CLI local config
 .libtv/
+
+# Logs
+*.log

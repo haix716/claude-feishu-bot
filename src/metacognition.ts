@@ -7,20 +7,20 @@
  * - 推送每日洞察到飞书
  */
 
-import fs from 'fs';
-import path from 'path';
+import fs from "fs";
+import path from "path";
 
 /** 元认知知识库路径 */
 const METACOGNITION_BASE = path.join(
   __dirname,
-  '..',
-  '..',
-  'claude-metacognition',
-  'knowledge-base',
+  "..",
+  "..",
+  "claude-metacognition",
+  "knowledge-base",
 );
 
 /** 用户反馈路径 */
-const FEEDBACK_DIR = path.join(METACOGNITION_BASE, 'feedback');
+const FEEDBACK_DIR = path.join(METACOGNITION_BASE, "feedback");
 
 /** 洞察结构 */
 interface Insight {
@@ -52,7 +52,7 @@ export function getRecentInsights(
   minScore: number = 7,
   limit: number = 10,
 ): Insight[] {
-  const insightsDir = path.join(METACOGNITION_BASE, 'insights');
+  const insightsDir = path.join(METACOGNITION_BASE, "insights");
   if (!fs.existsSync(insightsDir)) {
     return [];
   }
@@ -66,10 +66,10 @@ export function getRecentInsights(
 
     const files = fs.readdirSync(domainDir);
     for (const file of files) {
-      if (!file.endsWith('.json')) continue;
+      if (!file.endsWith(".json")) continue;
       try {
         const filepath = path.join(domainDir, file);
-        const content = fs.readFileSync(filepath, 'utf-8');
+        const content = fs.readFileSync(filepath, "utf-8");
         const insight = JSON.parse(content) as Insight;
         if (insight.score >= minScore) {
           insights.push(insight);
@@ -80,80 +80,127 @@ export function getRecentInsights(
     }
   }
 
-  return insights
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit);
+  return insights.sort((a, b) => b.score - a.score).slice(0, limit);
 }
 
 /**
  * 读取最新的反思报告
  */
 export function getLatestReflection(): string | null {
-  const reflectionsDir = path.join(METACOGNITION_BASE, 'reflections');
+  const reflectionsDir = path.join(METACOGNITION_BASE, "reflections");
   if (!fs.existsSync(reflectionsDir)) {
     return null;
   }
 
-  const files = fs.readdirSync(reflectionsDir)
-    .filter(f => f.endsWith('.md'))
+  const files = fs
+    .readdirSync(reflectionsDir)
+    .filter((f) => f.endsWith(".md"))
     .sort()
     .reverse();
 
   if (files.length === 0) return null;
 
-  return fs.readFileSync(path.join(reflectionsDir, files[0]), 'utf-8');
+  return fs.readFileSync(path.join(reflectionsDir, files[0]), "utf-8");
 }
 
 /**
  * 读取最新的日报
  */
 export function getLatestDigest(): string | null {
-  const digestDir = path.join(METACOGNITION_BASE, 'digest');
+  const digestDir = path.join(METACOGNITION_BASE, "digest");
   if (!fs.existsSync(digestDir)) {
     return null;
   }
 
-  const files = fs.readdirSync(digestDir)
-    .filter(f => f.startsWith('daily-') && f.endsWith('.md'))
+  const files = fs
+    .readdirSync(digestDir)
+    .filter((f) => f.startsWith("daily-") && f.endsWith(".md"))
     .sort()
     .reverse();
 
   if (files.length === 0) return null;
 
-  return fs.readFileSync(path.join(digestDir, files[0]), 'utf-8');
+  return fs.readFileSync(path.join(digestDir, files[0]), "utf-8");
 }
 
 /**
  * 生成元认知上下文（带缓存，1 小时刷新）
+ *
+ * 包含三部分：
+ * 1. 高价值洞察（原始数据）
+ * 2. 连接发现（反思报告中提取，最有价值）
+ * 3. 反思摘要（最近的反思要点）
  */
 export function generateMetacognitionContext(): string {
   const now = Date.now();
 
   // 缓存命中
-  if (cachedContext && (now - cachedAt) < CACHE_TTL) {
+  if (cachedContext && now - cachedAt < CACHE_TTL) {
     return cachedContext;
   }
 
   // 重新生成
   const insights = getRecentInsights(8, 5);
+  const reflection = getLatestReflection();
+  const connections = reflection ? extractConnections(reflection) : null;
+  const reflectionSummary = reflection ? extractSummary(reflection) : null;
 
-  if (insights.length === 0) {
-    cachedContext = '';
+  if (insights.length === 0 && !connections) {
+    cachedContext = "";
     cachedAt = now;
-    return '';
+    return "";
   }
 
-  let context = '\n\n## 元认知系统最近学到的知识\n';
-  context += '\n### 高价值洞察\n';
-  for (const insight of insights) {
-    context += `- [${insight.domain}] ${insight.insight}\n`;
+  let context = "\n\n## 元认知系统上下文\n";
+
+  // 连接发现（优先级最高）
+  if (connections) {
+    context += "\n### 今日连接发现（外部知识与晓燕工作的关联）\n";
+    context += connections + "\n";
+  }
+
+  // 反思摘要
+  if (reflectionSummary) {
+    context += "\n### 今日反思要点\n";
+    context += reflectionSummary + "\n";
+  }
+
+  // 高价值洞察
+  if (insights.length > 0) {
+    context += "\n### 高价值洞察\n";
+    for (const insight of insights) {
+      context += `- [${insight.domain}] ${insight.insight}\n`;
+    }
   }
 
   cachedContext = context;
   cachedAt = now;
 
-  console.log(`[元认知] 缓存已更新，${insights.length} 条洞察`);
+  console.log(`[元认知] 缓存已更新，${insights.length} 条洞察，${connections ? "含连接发现" : "无连接发现"}`);
   return context;
+}
+
+/**
+ * 从反思报告中提取"连接发现"板块
+ */
+function extractConnections(reflection: string): string | null {
+  const match = reflection.match(/连接发现[：:]\s*\n([\s\S]*?)(?=\n##\s|\n###\s|$)/);
+  if (!match) return null;
+
+  const content = match[1].trim();
+  return content.length > 0 ? content : null;
+}
+
+/**
+ * 从反思报告中提取"今日要点"板块（摘要）
+ */
+function extractSummary(reflection: string): string | null {
+  const match = reflection.match(/今日要点[\s\S]*?\n([\s\S]*?)(?=\n##\s|$)/);
+  if (!match) return null;
+
+  const content = match[1].trim();
+  // 只取前 500 字
+  return content.length > 500 ? content.substring(0, 500) + "..." : content;
 }
 
 /**
@@ -170,7 +217,7 @@ export function refreshCache(): void {
  */
 export function generateDailyInsightSummary(): string {
   const insights = getRecentInsights(7, 10);
-  const date = new Date().toISOString().split('T')[0];
+  const date = new Date().toISOString().split("T")[0];
 
   if (insights.length === 0) {
     return `🧠 元认知日报 ${date}\n\n今天没有新的高价值洞察。`;
@@ -188,7 +235,7 @@ export function generateDailyInsightSummary(): string {
   summary += `📊 今日采集 ${insights.length} 条高价值洞察，覆盖 ${byDomain.size} 个领域\n\n`;
 
   // Top 5 洞察
-  summary += '📌 Top 5 洞察：\n';
+  summary += "📌 Top 5 洞察：\n";
   const top5 = insights.slice(0, 5);
   for (let i = 0; i < top5.length; i++) {
     const insight = top5[i];
@@ -196,7 +243,7 @@ export function generateDailyInsightSummary(): string {
   }
 
   // 领域分布
-  summary += '\n📈 领域分布：\n';
+  summary += "\n📈 领域分布：\n";
   for (const [domain, items] of byDomain) {
     summary += `- ${domain}：${items.length} 条\n`;
   }
@@ -207,39 +254,43 @@ export function generateDailyInsightSummary(): string {
 /**
  * 生成每日推送的卡片元素（昨天的格式）
  */
-export function generateDailyPushElements(): Array<{ content: string; text_size?: string }> {
+export function generateDailyPushElements(): Array<{
+  content: string;
+  text_size?: string;
+}> {
   const insights = getRecentInsights(7, 10);
   const elements: Array<{ content: string; text_size?: string }> = [];
 
   if (insights.length === 0) {
-    elements.push({ content: '今天没有新的高价值洞察。' });
+    elements.push({ content: "今天没有新的高价值洞察。" });
     return elements;
   }
 
   // 为每条洞察生成内容
-  const emojis = ['🚀', '🎮', '📐', '🔧', '💡', '🎯', '🌟', '🔮'];
+  const emojis = ["🚀", "🎮", "📐", "🔧", "💡", "🎯", "🌟", "🔮"];
   insights.forEach((insight, index) => {
     const emoji = emojis[index % emojis.length];
     const title = insight.insight.split(/[。！\n]/)[0];
 
     elements.push({
-      text_size: 'heading-3',
+      text_size: "heading-3",
       content: `**${index + 1}. ${emoji} ${title}**`,
     });
 
     elements.push({ content: insight.insight });
 
     if (index < insights.length - 1) {
-      elements.push({ content: '---' });
+      elements.push({ content: "---" });
     }
   });
 
   // 分割线
-  elements.push({ content: '---' });
+  elements.push({ content: "---" });
 
   // 总结
   elements.push({
-    content: '总体来看，AI 行业正从**技术研发**、**商业落地**、**资本运作**和**基础设施建设**等多个维度快速发展。你对哪条新闻比较感兴趣？我可以帮你进一步了解。',
+    content:
+      "总体来看，AI 行业正从**技术研发**、**商业落地**、**资本运作**和**基础设施建设**等多个维度快速发展。你对哪条新闻比较感兴趣？我可以帮你进一步了解。",
   });
 
   return elements;
@@ -252,14 +303,14 @@ export function recordFeedback(
   userId: string,
   query: string,
   response: string,
-  feedback: 'positive' | 'negative' | 'neutral',
+  feedback: "positive" | "negative" | "neutral",
   comment?: string,
 ): void {
   if (!fs.existsSync(FEEDBACK_DIR)) {
     fs.mkdirSync(FEEDBACK_DIR, { recursive: true });
   }
 
-  const date = new Date().toISOString().split('T')[0];
+  const date = new Date().toISOString().split("T")[0];
   const timestamp = new Date().toISOString();
   const filename = `feedback-${date}.jsonl`;
   const filepath = path.join(FEEDBACK_DIR, filename);
@@ -273,6 +324,6 @@ export function recordFeedback(
     comment,
   };
 
-  fs.appendFileSync(filepath, JSON.stringify(entry) + '\n');
+  fs.appendFileSync(filepath, JSON.stringify(entry) + "\n");
   console.log(`[元认知] 记录用户反馈: ${feedback}`);
 }

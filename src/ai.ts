@@ -1,7 +1,7 @@
-import OpenAI from 'openai';
-import { config } from './config';
-import { ToolManager, ToolDefinition } from './tools';
-import { generateMetacognitionContext } from './metacognition';
+import OpenAI from "openai";
+import { config } from "./config";
+import { ToolManager, ToolDefinition } from "./tools";
+import { generateMetacognitionContext } from "./metacognition";
 
 const openai = new OpenAI({
   apiKey: config.ai.apiKey,
@@ -9,7 +9,7 @@ const openai = new OpenAI({
 });
 
 export interface ChatMessage {
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: string;
 }
 
@@ -21,25 +21,25 @@ export interface ChatContext {
 
 function getCurrentDate(): string {
   const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
 function buildSystemPrompt(ctx?: ChatContext): string {
-  const systemParts = [
-    config.systemPrompt,
-    `当前日期：${getCurrentDate()}`,
-  ];
+  const systemParts = [config.systemPrompt, `当前日期：${getCurrentDate()}`];
   if (ctx?.userName) systemParts.push(`用户名称：${ctx.userName}`);
   if (ctx?.chatName) systemParts.push(`群聊名称：${ctx.chatName}`);
-  if (ctx?.chatType === 'group') systemParts.push('当前在群聊中，请简洁回复。');
+  if (ctx?.chatType === "group") systemParts.push("当前在群聊中，请简洁回复。");
 
   // 添加元认知上下文
   const metacognitionContext = generateMetacognitionContext();
   if (metacognitionContext) {
     systemParts.push(metacognitionContext);
+    systemParts.push(
+      "注意：如果用户发送纯数字（如 1、2），可能是在追问今日灵犀日报中的某条洞察，请根据日报内容展开回答，不要当作新话题处理。",
+    );
   }
 
-  return systemParts.join('\n');
+  return systemParts.join("\n");
 }
 
 export async function streamAI(
@@ -50,9 +50,9 @@ export async function streamAI(
   const systemPrompt = buildSystemPrompt(ctx);
 
   const openaiMessages = [
-    { role: 'system' as const, content: systemPrompt },
-    ...messages.map(m => ({
-      role: m.role as 'user' | 'assistant',
+    { role: "system" as const, content: systemPrompt },
+    ...messages.map((m) => ({
+      role: m.role as "user" | "assistant",
       content: m.content,
     })),
   ];
@@ -64,7 +64,7 @@ export async function streamAI(
     max_tokens: 4096,
   });
 
-  let fullText = '';
+  let fullText = "";
   for await (const chunk of stream) {
     const delta = chunk.choices[0]?.delta?.content;
     if (delta) {
@@ -98,9 +98,9 @@ export async function streamAIWithTools(
   const tools = toolManager.getDefinitions();
 
   const openaiMessages: OpenAI.ChatCompletionMessageParam[] = [
-    { role: 'system', content: systemPrompt },
-    ...messages.map(m => ({
-      role: m.role as 'user' | 'assistant',
+    { role: "system", content: systemPrompt },
+    ...messages.map((m) => ({
+      role: m.role as "user" | "assistant",
       content: m.content,
     })),
   ];
@@ -110,8 +110,8 @@ export async function streamAIWithTools(
     const response = await openai.chat.completions.create({
       model: config.ai.model,
       messages: openaiMessages,
-      tools: tools.map(t => ({
-        type: 'function' as const,
+      tools: tools.map((t) => ({
+        type: "function" as const,
         function: {
           name: t.name,
           description: t.description,
@@ -124,19 +124,22 @@ export async function streamAIWithTools(
     const choice = response.choices[0];
 
     // 如果模型要调工具
-    if (choice.finish_reason === 'tool_calls' && choice.message.tool_calls) {
+    if (choice.finish_reason === "tool_calls" && choice.message.tool_calls) {
       // 添加模型的回复到消息历史
       openaiMessages.push(choice.message);
 
       // 执行所有工具调用
       for (const toolCall of choice.message.tool_calls) {
-        if (toolCall.type !== 'function') continue;
+        if (toolCall.type !== "function") continue;
         const params = JSON.parse(toolCall.function.arguments);
-        const result = await toolManager.execute(toolCall.function.name, params);
+        const result = await toolManager.execute(
+          toolCall.function.name,
+          params,
+        );
 
         // 添加工具结果到消息历史
         openaiMessages.push({
-          role: 'tool',
+          role: "tool",
           tool_call_id: toolCall.id,
           content: result,
         });
@@ -146,7 +149,7 @@ export async function streamAIWithTools(
     }
 
     // 不需要工具，返回结果
-    const content = choice.message.content || '';
+    const content = choice.message.content || "";
     onChunk(content);
     return content;
   }
@@ -158,53 +161,57 @@ export async function streamAIWithTools(
     max_tokens: 4096,
   });
 
-  const finalContent = finalResponse.choices[0]?.message?.content || '';
+  const finalContent = finalResponse.choices[0]?.message?.content || "";
   onChunk(finalContent);
   return finalContent;
 }
 
-export async function analyzeImage(base64Image: string): Promise<{ description: string; fileName: string }> {
+export async function analyzeImage(
+  base64Image: string,
+): Promise<{ description: string; fileName: string }> {
   const response = await openai.chat.completions.create({
     model: config.mimoImageModel,
-    messages: [{
-      role: 'user',
-      content: [
-        {
-          type: 'text',
-          text: `请分析这张图片，返回两行内容：
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text: `请分析这张图片，返回两行内容：
 1. 描述：用中文描述图片内容，100字以内
 2. 文件名：用中文生成一个简短的文件名，12个字以内，不要包含特殊字符和空格
 
 示例格式：
 描述：这是一张风景照，展示了山间的日出美景
-文件名：山间日出风景照`
-        },
-        {
-          type: 'image_url',
-          image_url: { url: `data:image/jpeg;base64,${base64Image}` },
-        },
-      ],
-    }],
+文件名：山间日出风景照`,
+          },
+          {
+            type: "image_url",
+            image_url: { url: `data:image/jpeg;base64,${base64Image}` },
+          },
+        ],
+      },
+    ],
     max_completion_tokens: 300,
   });
 
-  const content = response.choices[0]?.message?.content || '';
-  const lines = content.split('\n').filter(line => line.trim());
+  const content = response.choices[0]?.message?.content || "";
+  const lines = content.split("\n").filter((line) => line.trim());
 
-  let description = '';
-  let fileName = '';
+  let description = "";
+  let fileName = "";
 
   for (const line of lines) {
-    if (line.startsWith('描述：') || line.startsWith('描述:')) {
-      description = line.replace(/^描述[：:]\s*/, '').trim();
-    } else if (line.startsWith('文件名：') || line.startsWith('文件名:')) {
-      fileName = line.replace(/^文件名[：:]\s*/, '').trim();
+    if (line.startsWith("描述：") || line.startsWith("描述:")) {
+      description = line.replace(/^描述[：:]\s*/, "").trim();
+    } else if (line.startsWith("文件名：") || line.startsWith("文件名:")) {
+      fileName = line.replace(/^文件名[：:]\s*/, "").trim();
     }
   }
 
   // 如果解析失败，使用默认值
   if (!description) description = content.substring(0, 100);
-  if (!fileName) fileName = '图片';
+  if (!fileName) fileName = "图片";
 
   return { description, fileName };
 }

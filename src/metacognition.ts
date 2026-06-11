@@ -126,10 +126,11 @@ export function getLatestDigest(): string | null {
 /**
  * 生成元认知上下文（带缓存，1 小时刷新）
  *
- * 包含三部分：
- * 1. 高价值洞察（原始数据）
- * 2. 连接发现（反思报告中提取，最有价值）
+ * 包含四部分：
+ * 1. 连接发现（反思报告中提取，最有价值）
+ * 2. 认知变化追踪（反思报告中提取，追踪用户思考演变）
  * 3. 反思摘要（最近的反思要点）
+ * 4. 高价值洞察（原始数据）
  */
 export function generateMetacognitionContext(): string {
   const now = Date.now();
@@ -143,9 +144,10 @@ export function generateMetacognitionContext(): string {
   const insights = getRecentInsights(8, 5);
   const reflection = getLatestReflection();
   const connections = reflection ? extractConnections(reflection) : null;
+  const cognitiveChanges = reflection ? extractCognitiveChanges(reflection) : null;
   const reflectionSummary = reflection ? extractSummary(reflection) : null;
 
-  if (insights.length === 0 && !connections) {
+  if (insights.length === 0 && !connections && !cognitiveChanges) {
     cachedContext = "";
     cachedAt = now;
     return "";
@@ -157,6 +159,12 @@ export function generateMetacognitionContext(): string {
   if (connections) {
     context += "\n### 今日连接发现（外部知识与晓燕工作的关联）\n";
     context += connections + "\n";
+  }
+
+  // 认知变化追踪
+  if (cognitiveChanges) {
+    context += "\n### 认知变化追踪（晓燕最近的思考演变）\n";
+    context += cognitiveChanges + "\n";
   }
 
   // 反思摘要
@@ -176,7 +184,7 @@ export function generateMetacognitionContext(): string {
   cachedContext = context;
   cachedAt = now;
 
-  console.log(`[元认知] 缓存已更新，${insights.length} 条洞察，${connections ? "含连接发现" : "无连接发现"}`);
+  console.log(`[元认知] 缓存已更新，${insights.length} 条洞察，${connections ? "含连接发现" : ""}${cognitiveChanges ? " 含认知变化" : ""}`);
   return context;
 }
 
@@ -201,6 +209,18 @@ function extractSummary(reflection: string): string | null {
   const content = match[1].trim();
   // 只取前 500 字
   return content.length > 500 ? content.substring(0, 500) + "..." : content;
+}
+
+/**
+ * 从反思报告中提取"认知变化追踪"板块
+ */
+function extractCognitiveChanges(reflection: string): string | null {
+  const match = reflection.match(/认知变化追踪[：:]\s*\n([\s\S]*?)(?=\n##\s|\n###\s|$)/);
+  if (!match) return null;
+
+  const content = match[1].trim();
+  // 只取前 600 字
+  return content.length > 600 ? content.substring(0, 600) + "..." : content;
 }
 
 /**
